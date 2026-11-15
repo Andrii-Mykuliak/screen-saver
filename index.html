@@ -75,25 +75,24 @@ function layout() {
   const cw = clamp(Math.round(w / 260), 4, 8), ch = Math.round(cw * 1.5);
   const cols = Math.ceil(w / cw), rows = Math.ceil(h / ch), n = cols * rows;
   const SILL = 2;
-  let wh = Math.floor(rows * 0.8);
-  let ww = Math.round((wh * ch * 0.92) / cw);
-  if (ww > cols * 0.84) { ww = Math.floor(cols * 0.84); wh = Math.round((ww * cw) / (0.92 * ch)); }
-  const wx0 = Math.floor((cols - ww) / 2);
-  const wy0 = Math.max(1, Math.floor((rows - wh - SILL - 8) / 2));
-  const FX = Math.max(2, Math.round(ww / 28)), FY = Math.max(1, Math.round((FX * cw) / ch));
-  const MX = Math.max(1, Math.round(FX * 0.55)), MY = 1;
+  const bandRows = Math.max(4, Math.ceil(72 / ch));
+  const wh = rows - SILL - bandRows, ww = cols, wx0 = 0, wy0 = 0;
+  const FX = Math.max(2, Math.round(ww / 60)), FY = Math.max(1, Math.round((FX * cw) / ch));
+  const MX = Math.max(1, Math.round(FX * 0.5)), MY = Math.max(1, Math.round((MX * cw) / ch));
   const gx0 = wx0 + FX, gy0 = wy0 + FY, gw = ww - 2 * FX, gh = wh - 2 * FY;
-  const mxs = gx0 + Math.floor((gw - MX) / 2);
-  const ph = Math.floor((gh - 2 * MY) / 3);
-  const r1 = gy0 + ph, r2 = r1 + MY + ph, r3 = r2 + MY;
-  const panes = [];
-  for (const [px, pw] of [[gx0, mxs - gx0], [mxs + MX, gx0 + gw - (mxs + MX)]]) {
-    panes.push({ x: px, y: gy0, w: pw, h: ph });
-    panes.push({ x: px, y: r1 + MY, w: pw, h: ph });
-    panes.push({ x: px, y: r3, w: pw, h: gy0 + gh - r3 });
+  const nc = ww * cw > wh * ch * 1.15 ? 3 : 2, nr = nc === 3 ? 2 : 3;
+  const pwc = Math.floor((gw - (nc - 1) * MX) / nc), phr = Math.floor((gh - (nr - 1) * MY) / nr);
+  const mcols = [], mrows = [], panes = [];
+  for (let k = 1; k < nc; k++) mcols.push(gx0 + k * pwc + (k - 1) * MX);
+  for (let k = 1; k < nr; k++) mrows.push(gy0 + k * phr + (k - 1) * MY);
+  for (let j = 0; j < nr; j++) {
+    for (let k = 0; k < nc; k++) {
+      const x = gx0 + k * (pwc + MX), y = gy0 + j * (phr + MY);
+      panes.push({ x, y, w: k === nc - 1 ? gx0 + gw - x : pwc, h: j === nr - 1 ? gy0 + gh - y : phr });
+    }
   }
   Object.assign(L, {
-    w, h, dpr, cw, ch, cols, rows, n, SILL, wh, ww, wx0, wy0, FX, FY, MX, MY, gx0, gy0, gw, gh, mxs, r1, r2, panes,
+    w, h, dpr, cw, ch, cols, rows, n, SILL, wh, ww, wx0, wy0, FX, FY, MX, MY, gx0, gy0, gw, gh, mcols, mrows, panes,
     SW: cols * 2, SH: rows * 3, GX0: gx0 * 2, GY0: gy0 * 3, GW: gw * 2, GH: gh * 3,
   });
   L.u = L.GH / (100 - Y0);
@@ -101,12 +100,12 @@ function layout() {
 }
 
 function mk(w, h) { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; }
-const Y0 = 24;
+const Y0 = 30;
 const setW = (c) => c.setTransform(L.u, 0, 0, L.u, L.GX0, L.GY0 - Y0 * L.u);
 
 // ---------- static room: wall, frame, sill, rushnyks, candle, geranium ----------
 function buildCells() {
-  const { n, cols, rows, wx0, wy0, ww, wh, gx0, gy0, gw, gh, FX, FY, MX, MY, mxs, r1, r2, SILL } = L;
+  const { n, cols, rows, wx0, wy0, ww, wh, gx0, gy0, gw, gh, FX, FY, MX, MY, mcols, mrows, SILL } = L;
   kind = new Uint8Array(n); baseFill = new Uint8ClampedArray(n * 3); baseG = new Uint16Array(n); baseC = new Uint32Array(n);
   amb = new Float32Array(n); candleG = new Float32Array(n);
   fgCells = []; rushnyks = [];
@@ -116,8 +115,8 @@ function buildCells() {
   L.flame = { c: fcx, r: fcy };
   const sig = ww * 0.2;
   const band = sillTop + SILL;
-  const rw = Math.min(6, wx0 - 4);
-  const hasRush = rw >= 3;
+  const rw = clamp(Math.round(cols * 0.024), 4, 7);
+  const hasRush = false;
   const set = (i, f, g, col) => { baseFill[i * 3] = f[0]; baseFill[i * 3 + 1] = f[1]; baseFill[i * 3 + 2] = f[2]; baseG[i] = g; baseC[i] = col; };
 
   for (let r = 0; r < rows; r++) {
@@ -133,19 +132,19 @@ function buildCells() {
       if (inWin) {
         if (inPane(c, r)) { kind[i] = 3; continue; }
         kind[i] = 1;
-        const vert = c < gx0 || c >= gx0 + gw || (c >= mxs && c < mxs + MX);
-        const horiz = r < gy0 || r >= gy0 + gh || (r >= r1 && r < r1 + MY) || (r >= r2 && r < r2 + MY);
+        const vert = c < gx0 || c >= gx0 + gw || mcols.some((m) => c >= m && c < m + MX);
+        const horiz = r < gy0 || r >= gy0 + gh || mrows.some((m) => r >= m && r < m + MY);
         const outer = c === wx0 || c === wx0 + ww - 1 || r === wy0 || r === sillTop - 1;
         const inner = c === gx0 - 1 || c === gx0 + gw || r === gy0 - 1 || r === gy0 + gh;
-        const f = outer ? [38, 72, 128] : inner ? [74, 120, 190] : [50, 92, 160];
+        const f = outer ? [8, 12, 24] : inner ? [12, 20, 40] : [10, 16, 32];
         const g = vert && horiz ? 43 : vert ? 124 : 61;
-        set(i, f, g, pack(f[0] * 1.5 + 20, f[1] * 1.5 + 22, f[2] * 1.4 + 26));
+        set(i, f, g, outer ? pack(34, 62, 112) : inner ? pack(86, 130, 190) : pack(56, 92, 150));
         continue;
       }
-      if (r >= sillTop && r < sillTop + SILL && c >= wx0 - 3 && c < wx0 + ww + 3) {
+      if (r >= sillTop && r < sillTop + SILL) {
         kind[i] = 2;
         const top = r === sillTop;
-        set(i, top ? [150, 108, 74] : [92, 64, 46], top ? 95 : 45, top ? pack(188, 146, 104) : pack(130, 94, 70));
+        set(i, top ? [34, 24, 16] : [20, 14, 11], top ? 61 : 45, top ? pack(214, 150, 84) : pack(150, 100, 62));
         continue;
       }
       // wall
@@ -153,15 +152,15 @@ function buildCells() {
       if (r >= band) {
         kind[i] = 4;
         if (r === band) {
-          set(i, [30, 54, 104], (c & 1) ? 62 : 60, pack(226, 176, 70));
+          set(i, [10, 16, 34], (c & 1) ? 62 : 60, pack(236, 184, 70));
         } else {
-          const f = [24 + nz * 12, 46 + nz * 14, 96 + nz * 18];
-          set(i, f, hash(c, r, SEED + 3) < 0.05 ? 46 : 0, pack(120, 150, 205));
+          const f = [9 + nz * 5, 14 + nz * 6, 30 + nz * 10];
+          set(i, f, hash(c, r, SEED + 3) < 0.07 ? (hash(c, r, 8) < 0.5 ? 46 : 58) : 0, pack(70, 104, 170));
         }
       } else {
         kind[i] = 0;
-        const f = [64 + nz * 14, 58 + nz * 12, 64 + nz * 12];
-        set(i, f, hash(c, r, SEED + 9) < 0.045 ? (hash(c, r, 4) < 0.5 ? 46 : 58) : 0, pack(f[0] + 40, f[1] + 38, f[2] + 40));
+        const f = [11 + nz * 5, 11 + nz * 5, 15 + nz * 6];
+        set(i, f, hash(c, r, SEED + 9) < 0.06 ? (hash(c, r, 4) < 0.5 ? 46 : 58) : 0, pack(78, 74, 92));
       }
     }
   }
@@ -169,8 +168,8 @@ function buildCells() {
   // embroidered rushnyks hang on both sides of the window
   if (hasRush) {
     for (const side of [-1, 1]) {
-      const x0 = side < 0 ? wx0 - 2 - rw : wx0 + ww + 2;
-      const y1 = wy0 + Math.round(wh * 0.92);
+      const x0 = side < 0 ? gx0 + 1 : gx0 + gw - 1 - rw;
+      const y1 = wy0 + Math.round(wh * 0.64);
       rushnyks.push({ x0, y1 });
       for (let r = wy0; r <= y1; r++) {
         for (let k = 0; k < rw; k++) {
@@ -179,11 +178,11 @@ function buildCells() {
           const lr = r - wy0, ci = (rw - 1) / 2, m = lr % 8, hw = (m < 4 ? m : 7 - m) * (ci / 3);
           const edge = k === 0 || k === rw - 1;
           let g = 0, col = pack(200, 40, 44);
-          if (r === y1) { set(i, [60, 54, 60], 124, pack(222, 212, 184)); continue; }
+          if (r === y1) { set(i, [14, 12, 16], 124, pack(232, 220, 190)); continue; }
           if (edge) { g = 73; col = pack(34, 30, 38); }
           else if (Math.abs(Math.abs(k - ci) - hw) < 0.75) { g = 120; col = pack(212, 44, 48); }
           else if (lr % 8 === 4 && Math.abs(k - ci) < 0.6) { g = 43; col = pack(40, 34, 42); }
-          set(i, [206, 196, 168], g, col);
+          set(i, [24, 18, 22], g || 58, g ? col : pack(96, 84, 74));
         }
       }
     }
@@ -191,18 +190,18 @@ function buildCells() {
 
   // foreground objects standing on the sill, in front of the glass
   const put = (c, r, f, g, col) => { if (c >= 0 && c < cols && r >= 0 && r < rows) fgCells.push({ i: r * cols + c, f, g, col }); };
-  for (let k = 0; k < 3; k++) put(fcx, sillTop - 4 + k, [226, 214, 184], 124, pack(176, 156, 118));
-  for (let k = -1; k <= 1; k++) put(fcx + k, sillTop - 1, [150, 112, 52], 95, pack(220, 180, 90));
-  put(fcx, sillTop - 1, [150, 112, 52], 61, pack(220, 180, 90));
+  for (let k = 0; k < 3; k++) put(fcx, sillTop - 4 + k, [40, 34, 24], 124, pack(240, 226, 190));
+  for (let k = -1; k <= 1; k++) put(fcx + k, sillTop - 1, [34, 26, 12], 95, pack(230, 184, 92));
+  put(fcx, sillTop - 1, [34, 26, 12], 61, pack(230, 184, 92));
   const pcx = wx0 + Math.round(ww * 0.78);
-  for (let k = -2; k <= 2; k++) put(pcx + k, sillTop - 2, [176, 98, 60], 61, pack(224, 150, 100));
-  for (let k = -1; k <= 1; k++) put(pcx + k, sillTop - 1, [150, 78, 48], 35, pack(196, 116, 76));
+  for (let k = -2; k <= 2; k++) put(pcx + k, sillTop - 2, [40, 20, 12], 61, pack(236, 140, 90));
+  for (let k = -1; k <= 1; k++) put(pcx + k, sillTop - 1, [34, 16, 10], 35, pack(210, 110, 70));
   for (let dy = 0; dy < 5; dy++) {
     for (let dx = -4; dx <= 4; dx++) {
       const e = (dx / 4.3) ** 2 + ((dy - 2) / 2.7) ** 2;
       if (e > 1 || hash(dx, dy, SEED + 21) < 0.2) continue;
       const bloom = hash(dx, dy, SEED + 22) < 0.22;
-      put(pcx + dx, sillTop - 3 - dy, bloom ? [150, 36, 44] : [22, 58, 36], bloom ? 64 : "%&*".charCodeAt((hash(dx, dy, 5) * 3) | 0), bloom ? pack(240, 88, 96) : pack(76, 156, 88));
+      put(pcx + dx, sillTop - 3 - dy, bloom ? [40, 8, 12] : [6, 20, 12], bloom ? 64 : "%&*".charCodeAt((hash(dx, dy, 5) * 3) | 0), bloom ? pack(240, 88, 96) : pack(76, 156, 88));
     }
   }
 }
@@ -219,8 +218,9 @@ function genFrost() {
       for (let c = p.x; c < p.x + p.w; c++) {
         const i = r * cols + c;
         const dE = Math.min(c - p.x, p.x + p.w - 1 - c, (r - p.y) * 1.5, (p.y + p.h - 1 - r) * 1.5);
-        let m = clamp(1 - dE / (mn * 0.16), 0, 1);
-        m *= 0.45 + 0.75 * noise2(c * 0.22, r * 0.15, SEED);
+        let m = clamp(1 - dE / (mn * 0.17), 0, 1);
+        m = Math.pow(m, 0.8);
+        m *= 0.55 + 0.7 * noise2(c * 0.22, r * 0.15, SEED);
         m += 0.16 * ((r - p.y) / p.h) * clamp(1 - dE / (mn * 0.45), 0, 1);
         mist[i] = clamp(m, 0, 1);
         mistB[i] = delay + dE * 0.5;
@@ -236,25 +236,25 @@ function genFrost() {
         const i = r * cols + c, t = t0 + tr * 0.45;
         if (t < frostB[i]) { frostB[i] = t; frostG[i] = tr > len - 0.8 && rnd() < 0.5 ? 42 : dirGlyph(a); }
         if (depth < 3 && tr > next) {
-          next += 2.2 + rnd() * 1.2;
+          next += 2.8 + rnd() * 1.4;
           const sp = 0.78 - 0.1 * depth, sl = len * (0.42 - 0.07 * depth);
           grow(x, y, a + sp, sl, depth + 1, t); grow(x, y, a - sp, sl, depth + 1, t);
         }
       }
     };
-    for (let x = p.x + 2; x < p.x + p.w - 1; x += 8 + rnd() * 5) {
-      grow(x, p.y + 0.01, Math.PI / 2 + (rnd() - 0.5) * 0.8, mn * (0.05 + 0.1 * rnd()), 0, delay + rnd() * 8);
-      grow(x, p.y + p.h - 0.01, -Math.PI / 2 + (rnd() - 0.5) * 0.8, mn * (0.08 + 0.16 * rnd()), 0, delay + rnd() * 8);
+    for (let x = p.x + 2; x < p.x + p.w - 1; x += 11 + rnd() * 6) {
+      grow(x, p.y + 0.01, Math.PI / 2 + (rnd() - 0.5) * 0.8, mn * (0.035 + 0.07 * rnd()), 0, delay + rnd() * 8);
+      grow(x, p.y + p.h - 0.01, -Math.PI / 2 + (rnd() - 0.5) * 0.8, mn * (0.06 + 0.1 * rnd()), 0, delay + rnd() * 8);
     }
-    for (let y = p.y + 1.5; y < p.y + p.h - 1; y += 5 + rnd() * 3) {
-      grow(p.x + 0.01, y, (rnd() - 0.5) * 0.8, mn * (0.05 + 0.1 * rnd()), 0, delay + rnd() * 8);
-      grow(p.x + p.w - 0.01, y, Math.PI + (rnd() - 0.5) * 0.8, mn * (0.05 + 0.1 * rnd()), 0, delay + rnd() * 8);
+    for (let y = p.y + 1.5; y < p.y + p.h - 1; y += 8 + rnd() * 4) {
+      grow(p.x + 0.01, y, (rnd() - 0.5) * 0.8, mn * (0.035 + 0.07 * rnd()), 0, delay + rnd() * 8);
+      grow(p.x + p.w - 0.01, y, Math.PI + (rnd() - 0.5) * 0.8, mn * (0.035 + 0.07 * rnd()), 0, delay + rnd() * 8);
     }
     const corners = [[p.x, p.y, 0], [p.x + p.w - 0.01, p.y, 1], [p.x, p.y + p.h - 0.01, 3], [p.x + p.w - 0.01, p.y + p.h - 0.01, 2]];
     for (const [cx, cy, q] of corners) {
-      if (rnd() < 0.3) continue;
+      if (rnd() < 0.15) continue;
       const base = [0, Math.PI / 2, Math.PI, -Math.PI / 2][q];
-      for (let k = 0; k < 6; k++) grow(cx, cy, base + 0.1 + (k / 5) * (Math.PI / 2 - 0.2), mn * (0.2 + 0.1 * rnd()), 0, delay + 2 + rnd() * 3);
+      for (let k = 0; k < 6; k++) grow(cx, cy, base + 0.1 + (k / 5) * (Math.PI / 2 - 0.2), mn * (0.2 + 0.08 * rnd()), 0, delay + 2 + rnd() * 3);
     }
   }
 }
@@ -280,6 +280,7 @@ function buildWorld() {
     A: { cx: 0.22 * Wd, base: 74, w: 18, hgt: 8.5, wins: [-5, 5.2], door: { dx: 0, w: 3.2, h: 6, open: 0 }, chim: 5 },
     B: { cx: 0.66 * Wd, base: 77, w: 20, hgt: 9, wins: [-5.5], door: { dx: 5.2, w: 3.4, h: 6.4, open: 0 }, chim: -4 },
   };
+  if (Wd > 95) HOUSES.C = { cx: 0.5 * Wd, base: 75.5, w: 16, hgt: 8, wins: [-4], door: { dx: 4, w: 3, h: 5.6, open: 0 }, chim: 3 };
   for (const h of Object.values(HOUSES)) {
     h.door.x = h.cx + h.door.dx;
     h.winRects = h.wins.map((dx) => ({ x: h.cx + dx - 2, y: h.base - h.hgt + 2.2, w: 4, h: 3.6 }));
@@ -292,7 +293,7 @@ function buildWorld() {
   STARS = [];
   for (let k = 0; k < 44; k++) STARS.push({ x: rnd() * Wd, y: Y0 + rnd() * 34, ph: rnd() * TAU, s: 0.5 + rnd() * 0.5 });
   FLAKES = [];
-  const nf = Math.round((Wd * 76) / 40);
+  const nf = Math.round((Wd * 70) / 36);
   for (let k = 0; k < nf; k++) FLAKES.push({ x: rnd() * (Wd + 10) - 5, y: Y0 - 2 + rnd() * (104 - Y0), z: 0.2 + rnd() * 0.8, ph: rnd() * TAU });
 }
 
@@ -355,7 +356,7 @@ function bakeSky() {
   const w = X.createLinearGradient(0, 50, 0, 72);
   w.addColorStop(0, "rgba(230,140,100,0)"); w.addColorStop(1, "rgba(235,150,110,0.26)");
   X.fillStyle = w; X.fillRect(-6, 50, Wd + 12, 24);
-  const mx = 0.17 * Wd, my = 38;
+  const mx = 0.16 * Wd, my = 42;
   const h = X.createRadialGradient(mx, my, 3, mx, my, 24);
   h.addColorStop(0, "rgba(190,205,240,0.4)"); h.addColorStop(1, "rgba(190,205,240,0)");
   X.fillStyle = h; X.fillRect(mx - 24, my - 24, 48, 48);
@@ -399,7 +400,7 @@ function bakeBack() {
     for (let x = -6; x <= Wd + 6; x += 2) { const y = 86 + off + 1.6 * Math.sin(x * 0.08 + 0.5); x === -6 ? X.moveTo(x, y) : X.lineTo(x, y); }
     X.lineWidth = 0.5; X.strokeStyle = "rgba(128,148,192,0.6)"; X.stroke();
   }
-  house(HOUSES.A); house(HOUSES.B);
+  house(HOUSES.A); house(HOUSES.B); if (HOUSES.C) house(HOUSES.C);
   // wicker fence with clay pots on the posts
   const fence = (x0, x1, y) => {
     for (let x = x0; x <= x1; x += 1.3) {
@@ -471,7 +472,7 @@ function person(o) {
   if (o.rot) X.rotate(o.rot * o.dir);
   X.scale(o.dir * s, s); X.translate(0, bob);
   if (o.alpha !== undefined) X.globalAlpha = o.alpha;
-  const boot = "#251a18", cc = o.coat;
+  const boot = "#5a4030", cc = o.coat;
   if (!o.sit) {
     for (const k of [0, 1]) {
       const a = Math.sin(ph + k * Math.PI) * w, hx = k ? 0.6 : -0.4;
@@ -874,7 +875,7 @@ function drawScene() {
     S.fillStyle = `rgba(225,235,255,${(0.25 + 0.7 * tw * s.s).toFixed(3)})`; S.fillRect(s.x, s.y, 0.9 * s.s + 0.4, 0.9 * s.s + 0.4);
   }
   // the first star of Christmas Eve
-  const sx = 0.6 * L.Wd, sy = 35, tw = 0.8 + 0.2 * Math.sin(time * 1.7);
+  const sx = 0.58 * L.Wd, sy = 40, tw = 0.8 + 0.2 * Math.sin(time * 1.7);
   glow(sx, sy, 9, "200,220,255", 0.3 * tw);
   const ray = 3.2 + 1.6 * tw;
   ln(sx - ray, sy, sx + ray, sy, 0.35, "rgba(240,246,255,0.95)"); ln(sx, sy - ray, sx, sy + ray, 0.35, "rgba(240,246,255,0.95)");
@@ -915,8 +916,8 @@ function render() {
       const i = r * cols + c, o = i * 4, k = kind[i];
       if (k !== 3) {
         const a = amb[i], cg = candleG[i] * fl;
-        const m = 0.55 + 0.6 * a;
-        fd[o] = baseFill[i * 3] * m + 150 * cg * 0.55; fd[o + 1] = baseFill[i * 3 + 1] * m + 92 * cg * 0.55; fd[o + 2] = baseFill[i * 3 + 2] * m + 40 * cg * 0.55; fd[o + 3] = 255;
+        const m = 0.7 + 0.9 * a;
+        fd[o] = baseFill[i * 3] * m + 70 * cg * 0.55; fd[o + 1] = baseFill[i * 3 + 1] * m + 40 * cg * 0.55; fd[o + 2] = baseFill[i * 3 + 2] * m + 16 * cg * 0.55; fd[o + 3] = 255;
         const g = baseG[i];
         if (g) {
           const bc = baseC[i], mm = m + cg * 0.5;
@@ -942,34 +943,36 @@ function render() {
       const lum = (c0 + c1) / 6;
       const gx = (c1 - c0) / 3, gy = (r2 - r0) / 2, mag = Math.hypot(gx, gy);
       let glyph = 0;
-      if (mag > 0.14) glyph = dirGlyph(Math.atan2(gy, gx) + Math.PI / 2);
-      else if (lum > 0.07) {
-        const d = lum <= 0.45 ? lum / 0.45 : (1 - lum) / 0.55;
+      if (mag > 0.2) glyph = dirGlyph(Math.atan2(gy, gx) + Math.PI / 2);
+      else if (lum > 0.05) {
         const jit = Math.floor(hash(c, r, SEED) * 3) - 1;
-        glyph = RAMP.charCodeAt(clamp(Math.floor(d * (RAMP.length - 1)) + jit, 0, RAMP.length - 1));
+        const di = lum > 0.5 ? Math.floor(((1 - lum) / 0.5) * 4.2) + 1 : Math.floor(Math.pow(lum / 0.5, 0.8) * 6.5) + 1;
+        glyph = RAMP.charCodeAt(clamp(di + jit, 0, RAMP.length - 1));
       }
-      let fr = R, fg = Gg, fb = B;
-      let gr, gg2, gb;
-      if (lum > 0.45) { gr = fr * 0.7; gg2 = fg * 0.76; gb = fb * 0.88; } else { gr = fr * 1.55 + 22; gg2 = fg * 1.55 + 22; gb = fb * 1.5 + 26; }
+      const mx = Math.max(R, Gg, B, 1), boost = clamp(150 / mx, 1, 3.2);
+      let fr = R * 0.26, fg = Gg * 0.26, fb = B * 0.3;
+      let gr = clamp(R * boost * 0.95 + 24, 0, 255), gg2 = clamp(Gg * boost * 0.95 + 24, 0, 255), gb = clamp(B * boost * 0.95 + 30, 0, 255);
 
       // frost
       const eff = 1 - clr[i];
       let frostHide = 0;
       if (eff > 0.01) {
         const hasF = frostB[i] <= fT;
-        const mi = mist[i] * smooth(clamp((fT - mistB[i]) / 6, 0, 1));
+        const grown = smooth(clamp(fT / 26, 0, 1));
+        const mi = Math.max(mist[i] * smooth(clamp((fT - mistB[i]) / 6, 0, 1)), 0);
         if (hasF) {
           const tw = 0.8 + 0.2 * Math.sin(time * 3 + hash(c, r, 3) * 40);
-          const t = 0.34 * eff;
-          fr = lerp(fr, 120, t); fg = lerp(fg, 160, t); fb = lerp(fb, 198, t);
-          glyph = frostG[i]; gr = 206 * tw; gg2 = 232 * tw; gb = 250 * tw;
+          const t = 0.5 * eff;
+          fr = lerp(fr, 52, t); fg = lerp(fg, 82, t); fb = lerp(fb, 116, t);
+          glyph = frostG[i]; gr = 224 * tw; gg2 = 244 * tw; gb = 255 * tw;
           frostHide = eff;
         } else if (mi > 0.04) {
-          const t = 0.55 * mi * eff;
-          fr = lerp(fr, 128, t); fg = lerp(fg, 168, t); fb = lerp(fb, 204, t);
-          if (mi * eff > 0.5 && hash(c, r, 6) < 0.55) { glyph = hash(c, r, 7) < 0.6 ? 46 : 58; gr = 196; gg2 = 222; gb = 244; }
-          else if (glyph) { gr = lerp(gr, 196, t); gg2 = lerp(gg2, 222, t); gb = lerp(gb, 244, t); }
-          frostHide = mi * eff;
+          const t = 0.8 * mi * eff;
+          fr = lerp(fr, 50, t); fg = lerp(fg, 78, t); fb = lerp(fb, 112, t);
+          const hz = mi * eff;
+          if (hz > 0.22 && hash(c, r, 6) < hz * 0.95) { glyph = hash(c, r, 7) < 0.55 ? 46 : hash(c, r, 7) < 0.8 ? 58 : 39; gr = 186; gg2 = 214; gb = 240; }
+          else if (glyph) { const q = Math.min(1, hz * 1.1); gr = lerp(gr, 190, q); gg2 = lerp(gg2, 216, q); gb = lerp(gb, 240, q); }
+          frostHide = hz;
         }
       }
       fd[o] = fr; fd[o + 1] = fg; fd[o + 2] = fb; fd[o + 3] = 255;
@@ -988,7 +991,7 @@ function render() {
     const o = i * 4, lum = (fd[o] * 0.3 + fd[o + 1] * 0.59 + fd[o + 2] * 0.11) / 255;
     G[i] = f.z > 0.82 ? 42 : f.z > 0.6 ? 43 : f.z > 0.4 ? 58 : 46;
     const v = 0.55 + 0.45 * f.z;
-    C[i] = lum > 0.55 ? pack(120 + 30 * f.z, 144 + 30 * f.z, 190) : pack(236 * v, 242 * v, 255 * v);
+    C[i] = pack(236 * v, 244 * v, 255 * v);
   }
   // musical notes and laughter rise from the street
   for (const p of notes) {
@@ -1005,14 +1008,14 @@ function render() {
   for (const f of fgCells) {
     const o = f.i * 4, glassUnder = kind[f.i] === 3;
     const base = glassUnder ? [fd[o], fd[o + 1], fd[o + 2]] : [fd[o], fd[o + 1], fd[o + 2]];
-    const mixF = f.f[0] > 100 && f.f[1] > 80 ? 1 : 0.62;
+    const mixF = 1;
     fd[o] = lerp(base[0], f.f[0], mixF); fd[o + 1] = lerp(base[1], f.f[1], mixF); fd[o + 2] = lerp(base[2], f.f[2], mixF);
     G[f.i] = f.g; C[f.i] = f.col;
   }
   const fi = L.flame.r * cols + L.flame.c;
   {
     const o = fi * 4, fr = ["(", ")", "^", "'", "!"][Math.floor(time * 11 + Math.sin(time * 5) * 3) % 5 < 0 ? 0 : Math.floor(time * 11 + Math.sin(time * 5) * 3) % 5];
-    fd[o] = lerp(fd[o], 255, 0.5); fd[o + 1] = lerp(fd[o + 1], 170, 0.5); fd[o + 2] = lerp(fd[o + 2], 60, 0.5);
+    fd[o] = lerp(fd[o], 120, 0.5); fd[o + 1] = lerp(fd[o + 1], 70, 0.5); fd[o + 2] = lerp(fd[o + 2], 20, 0.5);
     G[fi] = fr.charCodeAt(0); C[fi] = pack(255, 232, 140);
   }
   // captions
@@ -1046,7 +1049,7 @@ function render() {
     ctx.fillText(chr(g), (i % cols) * cw + cw / 2, ((i / cols) | 0) * ch + ch / 2 + ch * 0.06);
   }
   // captions use a larger font so they stay readable
-  const capY = (Math.min(rows - 3, L.wy0 + L.wh + L.SILL + 3)) * ch;
+  const capY = (L.wy0 + L.wh + L.SILL + 2) * ch + ch * 0.5;
   ctx.textBaseline = "middle";
   if (cap.text) {
     const t = time - cap.t0, a = Math.min(1, t / 0.6, Math.max(0, (cap.dur - t) / 0.6));
