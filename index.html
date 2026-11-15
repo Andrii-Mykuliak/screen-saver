@@ -939,7 +939,17 @@ const STEP = 1 / 30;
 
 if (QS.has("clear")) clr.fill(1);
 
+const SAVER = QS.has("saver");
+if (SAVER) {
+  let ox = null, oy = null;
+  const quit = () => { if (window.chrome && window.chrome.webview) window.chrome.webview.postMessage("exit"); };
+  addEventListener("mousemove", (e) => { if (ox === null) { ox = e.screenX; oy = e.screenY; return; } if (Math.hypot(e.screenX - ox, e.screenY - oy) > 12) quit(); });
+  for (const t of ["keydown", "mousedown", "touchstart", "wheel"]) addEventListener(t, quit);
+  document.documentElement.style.cursor = "none"; canvas.style.cursor = "none";
+}
+
 function pointer(e) {
+  if (SAVER) return;
   const cx = e.clientX / L.cw, cy = e.clientY / L.ch;
   wipe(cx, cy, 3.6);
   hint.until = Math.min(hint.until, time + 1.5);
