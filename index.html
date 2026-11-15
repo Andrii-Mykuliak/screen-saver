@@ -7,10 +7,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2316275a'/%3E%3Cpath d='M16 4v24M5.6 10l20.8 12M5.6 22l20.8-12' stroke='%23dcebfa' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E">
 <style>
   html, body { margin: 0; height: 100%; background: #0a0b10; overflow: hidden; }
-  canvas {
-    display: block; width: 100vw; height: 100vh; touch-action: none;
-    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  }
+  canvas { display: block; touch-action: none; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
 </style>
 </head>
 <body>
@@ -23,6 +20,7 @@ const TAU = Math.PI * 2;
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const lerp = (a, b, t) => a + (b - a) * t;
 const smooth = (t) => t * t * (3 - 2 * t);
+const mix = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
 function hash(x, y, s) {
   let h = (Math.imul(x | 0, 374761393) + Math.imul(y | 0, 668265263) + Math.imul(s | 0, 1274126177)) | 0;
   h = Math.imul(h ^ (h >>> 13), 1274126177);
@@ -42,15 +40,9 @@ function mulberry32(a) {
   };
 }
 const pack = (r, g, b) => (clamp(r | 0, 0, 255) << 16) | (clamp(g | 0, 0, 255) << 8) | clamp(b | 0, 0, 255);
-const cssCache = new Map();
-function css(c) {
-  c &= 0xf8f8f8;
-  let v = cssCache.get(c);
-  if (v === undefined) cssCache.set(c, (v = `rgb(${c >>> 16},${(c >>> 8) & 255},${c & 255})`));
-  return v;
-}
 const charCache = [];
 const chr = (code) => charCache[code] || (charCache[code] = String.fromCharCode(code));
+// A line drawn at this angle looks most like which character?
 function dirGlyph(a) {
   a = ((a % Math.PI) + Math.PI) % Math.PI;
   if (a < Math.PI / 8 || a >= (7 * Math.PI) / 8) return 45;
@@ -58,140 +50,142 @@ function dirGlyph(a) {
   if (a < (5 * Math.PI) / 8) return 124;
   return 47;
 }
-const RAMP = ".:;=+*#%@";
-const SEED = (Math.random() * 1e6) | 0;
-const QS = new URLSearchParams(location.search);
-
-// ---------- layout ----------
-const L = {};
-let canvas, ctx, sceneC, S, skyC, backC, fgC, fillC, fillCtx, fillImg, gridC;
-let cellJ, cellP, cellH6, cellH7;
-let kind, baseFill, baseG, baseC, amb, candleG, fgCells = [];
-let frostG, frostB, mist, mistB, clr;
-let W3 = 0, G, C, rushnyks = [];
-let X;                                   // the 2D context world helpers draw into
-
-function layout() {
-  const w = innerWidth, h = innerHeight, dpr = Math.min(devicePixelRatio || 1, 1.5);
-  const cw = clamp(Math.round(w / 260), 4, 8), ch = Math.round(cw * 1.5);
-  const cols = Math.ceil(w / cw), rows = Math.ceil(h / ch), n = cols * rows;
-  const SILL = 0;
-  const bandRows = 0;
-  const wh = rows - SILL - bandRows, ww = cols, wx0 = 0, wy0 = 0;
-  const FX = Math.max(2, Math.round(ww / 60)), FY = Math.max(1, Math.round((FX * cw) / ch));
-  const MX = Math.max(1, Math.round(FX * 0.5)), MY = Math.max(1, Math.round((MX * cw) / ch));
-  const gx0 = wx0 + FX, gy0 = wy0 + FY, gw = ww - 2 * FX, gh = wh - 2 * FY;
-  const nc = ww * cw > wh * ch * 1.15 ? 3 : 2, nr = nc === 3 ? 2 : 3;
-  const pwc = Math.floor((gw - (nc - 1) * MX) / nc), phr = Math.floor((gh - (nr - 1) * MY) / nr);
-  const mcols = [], mrows = [], panes = [];
-  for (let k = 1; k < nc; k++) mcols.push(gx0 + k * pwc + (k - 1) * MX);
-  for (let k = 1; k < nr; k++) mrows.push(gy0 + k * phr + (k - 1) * MY);
-  for (let j = 0; j < nr; j++) {
-    for (let k = 0; k < nc; k++) {
-      const x = gx0 + k * (pwc + MX), y = gy0 + j * (phr + MY);
-      panes.push({ x, y, w: k === nc - 1 ? gx0 + gw - x : pwc, h: j === nr - 1 ? gy0 + gh - y : phr });
-    }
-  }
-  Object.assign(L, {
-    w, h, dpr, cw, ch, cols, rows, n, SILL, wh, ww, wx0, wy0, FX, FY, MX, MY, gx0, gy0, gw, gh, mcols, mrows, panes,
-    SW: cols * 2, SH: rows * 3, GX0: gx0 * 2, GY0: gy0 * 3, GW: gw * 2, GH: gh * 3,
-  });
-  L.u = L.GH / (100 - Y0);
-  L.Wd = L.GW / L.u;
-}
-
+const hexRgb = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+const shade = (h, k) => { const [r, g, b] = hexRgb(h); return `rgb(${(r * k) | 0},${(g * k) | 0},${(b * k) | 0})`; };
+const span = (a) => a[0] + Math.random() * (a[1] - a[0]);
 function mk(w, h) { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; }
-const Y0 = 0;
-const setW = (c) => c.setTransform(L.u, 0, 0, L.u, L.GX0, L.GY0 - Y0 * L.u);
 
-// ---------- static room: wall, frame, sill, rushnyks, candle, geranium ----------
+const RAMP = ".:;=+*#%@";          // sparse -> dense
+const QS = new URLSearchParams(location.search);
+if (QS.has("seed")) Math.random = mulberry32(Number(QS.get("seed")) | 0);     // repeatable runs, for testing
+const SEED = (Math.random() * 1e6) | 0;
+const SAVER = QS.has("saver"), ZOO = QS.has("zoo");
+
+// ---------- state ----------
+const L = {};
+let canvas, ctx, S, Dc, staticS, staticD;
+let kind, glassIdx, BG3, bgKind, bgG, bgC, spk, hid;
+let F3, G, C, PF, PG, PC, cellJ, cellP, cellH6, cellH7;
+let frostG, frostB, mist, mistB, clr;
+let starG, starC, starCells = [];
+let outImg, OUT32;
+let X, D;                            // colour context and feather-direction context
+let time = 0;
+let BIRDS = [], MAG = null, ROWAN = null, SNAG = null, dust = [], FLAKES = [], STARS = [];
+
+// ---------- the look ----------
+const SKY = [[11, 22, 62], [33, 68, 128], [70, 104, 160]];
+const HILL = [[50, 76, 124], [60, 88, 138], [72, 102, 152], [92, 122, 172]];
+const GROUND = [[82, 106, 156], [96, 120, 168], [110, 134, 180], [126, 148, 192], [144, 164, 204]];
+const BARK = "#3b2a24", SNOW = "#e6edf8";
+const MOON = { x: 0.17, y: 14, r: 6.2 };
+const farY = (x) => 66 + 3 * Math.sin(x * 0.05 + 1) + 2 * Math.sin(x * 0.11 + 2);
+const nearY = (x) => 81 + 2.5 * Math.sin(x * 0.035 + 0.5) + 1.5 * Math.sin(x * 0.09 + 2.2);
+
+// ---------- layout: a window that fills the screen ----------
+function layout() {
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  const wD = Math.max(1, Math.round(innerWidth * dpr)), hD = Math.max(1, Math.round(innerHeight * dpr));
+  const cwD = clamp(Math.round(wD / 260), 4, 16), chD = Math.round(cwD * 1.5);
+  const cols = Math.ceil(wD / cwD), rows = Math.ceil(hD / chD), n = cols * rows;
+  const FX = Math.max(2, Math.round(cols / 64)), FY = Math.max(1, Math.round(FX / 1.5));
+  const MX = Math.max(1, Math.round(FX * 0.5)), MY = Math.max(1, Math.round(MX / 1.5));
+  const gx0 = FX, gy0 = FY, gw = cols - 2 * FX, gh = rows - 2 * FY;
+  const nc = wD > hD * 1.15 ? 3 : 2;
+  const pwc = Math.floor((gw - (nc - 1) * MX) / nc), tr = Math.round(gh * 0.29);   // tr: the row of small upper lights
+  const mcols = [], mrows = [gy0 + tr], panes = [];
+  for (let k = 1; k < nc; k++) mcols.push(gx0 + k * pwc + (k - 1) * MX);
+  for (let k = 0; k < nc; k++) {
+    const x = gx0 + k * (pwc + MX), pw = k === nc - 1 ? gx0 + gw - x : pwc;
+    panes.push({ x, y: gy0, w: pw, h: tr });
+    panes.push({ x, y: gy0 + tr + MY, w: pw, h: gh - tr - MY });
+  }
+  Object.assign(L, { dpr, cwD, chD, cols, rows, n, FX, FY, MX, MY, gx0, gy0, gw, gh, nc, tr, mcols, mrows, panes,
+    SW: cols * 2, SH: rows * 3, GX0: gx0 * 2, GY0: gy0 * 3, GW: gw * 2, GH: gh * 3 });
+  L.u = L.GH / 100;                  // the world is 100 units tall
+  L.Wd = L.GW / L.u;
+  L.bk = clamp(L.Wd / 120, 0.55, 1);            // bird scale
+  L.muntinX = mcols.map((m) => ((m + MX / 2) * 2 - L.GX0) / L.u);
+  const th = (tr * 3) / L.u;
+  MOON.x = 0.5 / nc; MOON.y = th * 0.5; MOON.r = Math.min(6.2, th * 0.26);
+}
+const setW = (c) => c.setTransform(L.u, 0, 0, L.u, L.GX0, L.GY0);
+
+// ---------- static cells: the frame, the calm backdrop, snow drifted against the glass ----------
 function buildCells() {
-  const { n, cols, rows, wx0, wy0, ww, wh, gx0, gy0, gw, gh, FX, FY, MX, MY, mcols, mrows, SILL } = L;
-  kind = new Uint8Array(n); baseFill = new Uint8ClampedArray(n * 3); baseG = new Uint16Array(n); baseC = new Uint32Array(n);
-  amb = new Float32Array(n); candleG = new Float32Array(n);
-  fgCells = []; rushnyks = [];
-  const inPane = (c, r) => L.panes.some((p) => c >= p.x && c < p.x + p.w && r >= p.y && r < p.y + p.h);
-  const sillTop = wy0 + wh;
-  const fcx = wx0 + Math.round(ww * 0.2), fcy = sillTop - 5;
-  L.flame = { c: fcx, r: fcy };
-  const sig = ww * 0.2;
-  const band = sillTop + SILL;
-  const rw = clamp(Math.round(cols * 0.024), 4, 7);
-  const hasRush = false;
-  const set = (i, f, g, col) => { baseFill[i * 3] = f[0]; baseFill[i * 3 + 1] = f[1]; baseFill[i * 3 + 2] = f[2]; baseG[i] = g; baseC[i] = col; };
-
+  const { n, cols, rows, gx0, gy0, gw, gh, MX, MY, mcols, mrows, u, GX0, GY0, Wd, panes } = L;
+  kind = new Uint8Array(n); BG3 = new Uint8ClampedArray(n * 3); bgKind = new Uint8Array(n);
+  bgG = new Uint16Array(n); bgC = new Uint32Array(n); spk = new Float32Array(n); hid = new Uint8Array(n);
+  F3 = new Uint8ClampedArray(n * 3); G = new Uint16Array(n); C = new Uint32Array(n);
+  const pane = new Int8Array(n).fill(-1);
+  panes.forEach((p, k) => { for (let r = p.y; r < p.y + p.h; r++) for (let c = p.x; c < p.x + p.w; c++) pane[r * cols + c] = k; });
+  const gl = [], mxw = MOON.x * Wd;
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
-      const i = r * cols + c;
-      const inWin = c >= wx0 && c < wx0 + ww && r >= wy0 && r < wy0 + wh;
-      // ambient light spilling from the window and warmth from the candle
-      const dxw = Math.max(wx0 - c, 0, c - (wx0 + ww - 1)), dyw = Math.max(wy0 - r, 0, r - (sillTop - 1)) * 1.5;
-      amb[i] = Math.exp(-Math.hypot(dxw, dyw) / (wh * 0.55));
-      const dx = c - fcx, dy = (r - fcy) * 1.5;
-      candleG[i] = 0;
-
-      if (inWin) {
-        if (inPane(c, r)) { kind[i] = 3; continue; }
+      const i = r * cols + c, o = i * 3;
+      if (pane[i] < 0) {
+        // wooden frame
         kind[i] = 1;
         const vert = c < gx0 || c >= gx0 + gw || mcols.some((m) => c >= m && c < m + MX);
         const horiz = r < gy0 || r >= gy0 + gh || mrows.some((m) => r >= m && r < m + MY);
-        const outer = c === wx0 || c === wx0 + ww - 1 || r === wy0 || r === sillTop - 1;
-        const inner = c === gx0 - 1 || c === gx0 + gw || r === gy0 - 1 || r === gy0 + gh;
-        const f = outer ? [24, 13, 8] : inner ? [46, 27, 16] : [36, 20, 12];
-        const g = vert && horiz ? 43 : vert ? 124 : 61;
-        set(i, f, g, outer ? pack(104, 64, 36) : inner ? pack(184, 124, 74) : pack(142, 92, 54));
+        const outer = c === 0 || r === 0 || c === cols - 1 || r === rows - 1;
+        const inner = (c > 0 && pane[i - 1] >= 0) || (c < cols - 1 && pane[i + 1] >= 0) || (r > 0 && pane[i - cols] >= 0) || (r < rows - 1 && pane[i + cols] >= 0);
+        const f = outer ? [20, 11, 7] : inner ? [54, 32, 19] : [37, 21, 12], grain = hash(c, r, SEED + 60);
+        F3[o] = f[0]; F3[o + 1] = f[1]; F3[o + 2] = f[2];
+        G[i] = vert && horiz ? 43 : vert ? (grain < 0.1 ? 58 : 124) : grain < 0.1 ? 45 : 61;
+        C[i] = outer ? pack(82, 50, 29) : inner ? pack(170, 114, 68) : pack(116, 74, 43);
         continue;
       }
-      if (r >= sillTop && r < sillTop + SILL) {
-        kind[i] = 2;
-        const top = r === sillTop;
-        set(i, top ? [34, 24, 16] : [20, 14, 11], top ? 61 : 45, top ? pack(214, 150, 84) : pack(150, 100, 62));
-        continue;
-      }
-      // wall
-      const nz = noise2(c * 0.18, r * 0.27, SEED) * 0.5 + hash(c, r, SEED) * 0.5;
-      if (r >= band) {
-        kind[i] = 4;
-        if (r === band) {
-          set(i, [10, 16, 34], (c & 1) ? 62 : 60, pack(236, 184, 70));
-        } else {
-          const f = [9 + nz * 5, 14 + nz * 6, 30 + nz * 10];
-          set(i, f, hash(c, r, SEED + 3) < 0.07 ? (hash(c, r, 8) < 0.5 ? 46 : 58) : 0, pack(70, 104, 170));
-        }
+      kind[i] = 3; gl.push(i);
+      // backdrop: flat dithered bands, like the contour lines of a depth chart
+      const wx = ((c + 0.5) * 2 - GX0) / u, wy = ((r + 0.5) * 3 - GY0) / u, h = hash(c, r, SEED + 50);
+      const fy = farY(wx), ny = nearY(wx);
+      let col;
+      if (wy < fy) {
+        const dm = Math.hypot(wx - mxw, wy - MOON.y);
+        const v = clamp(wy / 70, 0, 1) + 0.5 * Math.exp(-(dm * dm) / 420);
+        const q = Math.floor(v * 10 + (h - 0.5) * 0.9) / 10;
+        col = q <= 1 ? mix(SKY[0], SKY[1], clamp(q, 0, 1)) : mix(SKY[1], SKY[2], clamp((q - 1) / 0.5, 0, 1));
+      } else if (wy < ny) {
+        bgKind[i] = 1;
+        const v = 0.6 * noise2(wx * 0.07, wy * 0.22, SEED + 51) + (wy - fy < 1.5 ? 0.4 : 0);
+        col = HILL[clamp(Math.floor(v * 4 + (h - 0.5) * 0.8), 0, 3)];
       } else {
-        kind[i] = 0;
-        const f = [11 + nz * 5, 11 + nz * 5, 15 + nz * 6];
-        set(i, f, hash(c, r, SEED + 9) < 0.06 ? (hash(c, r, 4) < 0.5 ? 46 : 58) : 0, pack(78, 74, 92));
+        bgKind[i] = 2;
+        const v = 0.45 * noise2(wx * 0.045, wy * 0.14, SEED + 52) + 0.5 * ((wy - ny) / (100 - ny)) + (wy - ny < 1.3 ? 0.3 : 0);
+        col = GROUND[clamp(Math.floor(v * 5 + (h - 0.5) * 0.8), 0, 4)];
       }
+      BG3[o] = col[0]; BG3[o + 1] = col[1]; BG3[o + 2] = col[2];
+      if (bgKind[i] && hash(c, r, SEED + 53) < 0.012) spk[i] = 1 + hash(c, r, SEED + 54) * 40;
     }
   }
-
-  // embroidered rushnyks hang on both sides of the window
-  if (hasRush) {
-    for (const side of [-1, 1]) {
-      const x0 = side < 0 ? gx0 + 1 : gx0 + gw - 1 - rw;
-      const y1 = wy0 + Math.round(wh * 0.64);
-      rushnyks.push({ x0, y1 });
-      for (let r = wy0; r <= y1; r++) {
-        for (let k = 0; k < rw; k++) {
-          const i = r * cols + x0 + k;
-          kind[i] = 5;
-          const lr = r - wy0, ci = (rw - 1) / 2, m = lr % 8, hw = (m < 4 ? m : 7 - m) * (ci / 3);
-          const edge = k === 0 || k === rw - 1;
-          let g = 0, col = pack(200, 40, 44);
-          if (r === y1) { set(i, [14, 12, 16], 124, pack(232, 220, 190)); continue; }
-          if (edge) { g = 73; col = pack(34, 30, 38); }
-          else if (Math.abs(Math.abs(k - ci) - hw) < 0.75) { g = 120; col = pack(212, 44, 48); }
-          else if (lr % 8 === 4 && Math.abs(k - ci) < 0.6) { g = 43; col = pack(40, 34, 42); }
-          set(i, [24, 18, 22], g || 58, g ? col : pack(96, 84, 74));
+  // snow blown into the bottom corners of every pane
+  for (const p of panes) {
+    const hmax = clamp(p.h * 0.085, 1.6, 7), hs = [];
+    for (let c = p.x; c < p.x + p.w; c++) {
+      const xn = (c - p.x + 0.5) / p.w;
+      hs.push(Math.max(1, Math.round(hmax * (0.14 + 0.86 * Math.pow(Math.abs(2 * xn - 1), 2.6)) * (0.75 + 0.5 * noise2(c * 0.17, p.y * 0.3, SEED + 40)))));
+    }
+    for (let k = 0; k < p.w; k++) {
+      const c = p.x + k, hh = hs[k];
+      for (let j = 0; j < hh; j++) {
+        const r = p.y + p.h - 1 - j, i = r * cols + c, o = i * 3;
+        bgKind[i] = 3; spk[i] = 0;
+        if (j === hh - 1) {
+          const l = k > 0 ? hs[k - 1] : hh, rt = k < p.w - 1 ? hs[k + 1] : hh;
+          bgG[i] = l > hh ? 92 : rt > hh ? 47 : 95; bgC[i] = pack(236, 242, 254);
+        } else {
+          const t = j / hmax;
+          BG3[o] = 162 + 30 * t; BG3[o + 1] = 180 + 26 * t; BG3[o + 2] = 214 + 18 * t;
+          if (hash(c, r, SEED + 41) < 0.1) { bgG[i] = 46; bgC[i] = pack(120, 140, 180); }
         }
       }
     }
   }
-
+  glassIdx = Uint32Array.from(gl);
 }
 
-// ---------- frost: fern-like branches grown from the pane edges ----------
+// ---------- frost: fern-like plumes grown from the pane edges ----------
 function genFrost() {
   const { n, cols } = L;
   frostG = new Uint16Array(n); frostB = new Float32Array(n).fill(1e9);
@@ -203,60 +197,78 @@ function genFrost() {
       for (let c = p.x; c < p.x + p.w; c++) {
         const i = r * cols + c;
         const dE = Math.min(c - p.x, p.x + p.w - 1 - c, (r - p.y) * 1.5, (p.y + p.h - 1 - r) * 1.5);
-        let m = clamp(1 - dE / (mn * 0.1), 0, 1);
-        m = Math.pow(m, 0.8);
-        m *= 0.55 + 0.7 * noise2(c * 0.22, r * 0.15, SEED);
-        m += 0.16 * ((r - p.y) / p.h) * clamp(1 - dE / (mn * 0.45), 0, 1);
-        mist[i] = clamp(m, 0, 1);
-        mistB[i] = delay + dE * 0.5;
+        const low = 0.45 + 0.55 * ((r - p.y) / p.h);
+        let m = Math.pow(clamp(1 - dE / (mn * 0.085 * (0.6 + low)), 0, 1), 0.8) * (0.55 + 0.7 * noise2(c * 0.22, r * 0.15, SEED));
+        m += 0.14 * ((r - p.y) / p.h) * clamp(1 - dE / (mn * 0.4), 0, 1);
+        mist[i] = clamp(m, 0, 1); mistB[i] = delay + dE * 0.5;
       }
     }
     const grow = (x, y, a, len, depth, t0) => {
       let tr = 0, next = 1.4 + rnd() * 0.8;
+      const curl = (rnd() - 0.5) * 0.08;
       while (tr < len) {
         x += Math.cos(a) * 0.5; y += (Math.sin(a) * 0.5) / 1.5; tr += 0.5;
-        a += (rnd() - 0.5) * 0.12;
+        a += curl + (rnd() - 0.5) * 0.1;
         const c = Math.floor(x), r = Math.floor(y);
         if (c < p.x || c >= p.x + p.w || r < p.y || r >= p.y + p.h) break;
         const i = r * cols + c, t = t0 + tr * 0.45;
         if (t < frostB[i]) { frostB[i] = t; frostG[i] = tr > len - 0.8 && rnd() < 0.5 ? 42 : dirGlyph(a); }
         if (depth < 2 && tr > next) {
-          next += 2.2 + rnd() * 1.0;
+          next += 2.2 + rnd();
           const sp = 0.78 - 0.1 * depth, sl = len * (0.42 - 0.07 * depth);
           grow(x, y, a + sp, sl, depth + 1, t); grow(x, y, a - sp, sl, depth + 1, t);
         }
       }
     };
-    for (let x = p.x + 2; x < p.x + p.w - 1; x += 16 + rnd() * 10) {
-      grow(x, p.y + 0.01, Math.PI / 2 + (rnd() - 0.5) * 0.8, mn * (0.08 + 0.14 * rnd()), 0, delay + rnd() * 8);
-      grow(x, p.y + p.h - 0.01, -Math.PI / 2 + (rnd() - 0.5) * 0.8, mn * (0.1 + 0.16 * rnd()), 0, delay + rnd() * 8);
+    for (let x = p.x + 4; x < p.x + p.w - 3; x += 22 + rnd() * 14) grow(x, p.y + 0.01, Math.PI / 2 + (rnd() - 0.5) * 0.8, mn * (0.04 + 0.06 * rnd()), 0, delay + rnd() * 8);
+    for (let x = p.x + 3; x < p.x + p.w - 2; x += 9 + rnd() * 12) { const q = rnd(); grow(x, p.y + p.h - 0.01, -Math.PI / 2 + (rnd() - 0.5) * 0.9, mn * (0.05 + 0.26 * q * q), 0, delay + rnd() * 8); }
+    for (let y = p.y + 3; y < p.y + p.h - 1; y += 11 + rnd() * 6) {
+      const low = 0.35 + 0.65 * ((y - p.y) / p.h);          // longer plumes lower down
+      grow(p.x + 0.01, y, (rnd() - 0.5) * 0.8, mn * (0.05 + 0.12 * rnd()) * low, 0, delay + rnd() * 8);
+      grow(p.x + p.w - 0.01, y, Math.PI + (rnd() - 0.5) * 0.8, mn * (0.05 + 0.12 * rnd()) * low, 0, delay + rnd() * 8);
     }
-    for (let y = p.y + 1.5; y < p.y + p.h - 1; y += 12 + rnd() * 6) {
-      grow(p.x + 0.01, y, (rnd() - 0.5) * 0.8, mn * (0.08 + 0.14 * rnd()), 0, delay + rnd() * 8);
-      grow(p.x + p.w - 0.01, y, Math.PI + (rnd() - 0.5) * 0.8, mn * (0.08 + 0.14 * rnd()), 0, delay + rnd() * 8);
-    }
-    const corners = [[p.x, p.y, 0], [p.x + p.w - 0.01, p.y, 1], [p.x, p.y + p.h - 0.01, 3], [p.x + p.w - 0.01, p.y + p.h - 0.01, 2]];
-    for (const [cx, cy, q] of corners) {
-      if (rnd() < 0.15) continue;
+    const corners = [[p.x, p.y, 0, 0.5, 0.1], [p.x + p.w - 0.01, p.y, 1, 0.5, 0.1], [p.x, p.y + p.h - 0.01, 3, 0.95, 0.26], [p.x + p.w - 0.01, p.y + p.h - 0.01, 2, 0.95, 0.26]];
+    for (const [cx, cy, q, prob, len] of corners) {
+      if (rnd() > prob) continue;
       const base = [0, Math.PI / 2, Math.PI, -Math.PI / 2][q];
-      for (let k = 0; k < 6; k++) grow(cx, cy, base + 0.1 + (k / 5) * (Math.PI / 2 - 0.2), mn * (0.2 + 0.08 * rnd()), 0, delay + 2 + rnd() * 3);
+      for (let k = 0; k < 6; k++) grow(cx, cy, base + 0.1 + (k / 5) * (Math.PI / 2 - 0.2), mn * (len + 0.07 * rnd()), 0, delay + 2 + rnd() * 3);
     }
   }
 }
 
-// ---------- the world outside: units of 1/100 of the glass height ----------
-const poly = (pts, fill) => { X.beginPath(); X.moveTo(pts[0], pts[1]); for (let k = 2; k < pts.length; k += 2) X.lineTo(pts[k], pts[k + 1]); X.closePath(); X.fillStyle = fill; X.fill(); };
-const ell = (x, y, rx, ry, fill, rot = 0) => { X.beginPath(); X.ellipse(x, y, Math.max(0.01, rx), Math.max(0.01, ry), rot, 0, TAU); X.fillStyle = fill; X.fill(); };
-const ln = (x1, y1, x2, y2, w, col) => { X.beginPath(); X.moveTo(x1, y1); X.lineTo(x2, y2); X.lineWidth = w; X.strokeStyle = col; X.lineCap = "round"; X.stroke(); };
-function glow(x, y, r, rgb, a) {
-  const g = X.createRadialGradient(x, y, 0, x, y, r);
-  g.addColorStop(0, `rgba(${rgb},${a})`); g.addColorStop(1, `rgba(${rgb},0)`);
-  X.globalCompositeOperation = "lighter"; X.fillStyle = g; X.fillRect(x - r, y - r, r * 2, r * 2); X.globalCompositeOperation = "source-over";
+// ---------- drawing into two layers at once ----------
+// X receives colour. D receives, for feathered or fibrous shapes, the direction their strokes run in,
+// so that the character grid can draw them with rays the way the koi's fins are drawn.
+const G2 = {
+  save() { X.save(); D.save(); },
+  restore() { X.restore(); D.restore(); },
+  translate(x, y) { X.translate(x, y); D.translate(x, y); },
+  rotate(a) { X.rotate(a); D.rotate(a); },
+  scale(x, y) { X.scale(x, y); D.scale(x, y); },
+  clip(build) { build(X); X.clip(); build(D); D.clip(); },
+};
+function dirStyle(a) {
+  const m = X.getTransform(), c = Math.cos(a), s = Math.sin(a);
+  const A2 = 2 * Math.atan2(m.b * c + m.d * s, m.a * c + m.c * s);
+  return `rgb(${Math.round(128 + 127 * Math.cos(A2))},${Math.round(128 + 127 * Math.sin(A2))},0)`;
 }
+// Fill a shape. With an angle it is tagged as feathers running that way; without one it hides any tag beneath it.
+function shape(build, fill, ang) {
+  build(X); X.fillStyle = fill; X.fill();
+  build(D);
+  if (ang === undefined) { D.globalCompositeOperation = "destination-out"; D.fillStyle = "#000"; D.fill(); D.globalCompositeOperation = "source-over"; }
+  else { D.fillStyle = dirStyle(ang); D.fill(); }
+}
+function line(x1, y1, x2, y2, w, col, tag = true) {
+  for (const c of [X, D]) { c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.lineWidth = w; c.lineCap = "round"; }
+  X.strokeStyle = col; X.stroke();
+  if (tag) { D.strokeStyle = dirStyle(Math.atan2(y2 - y1, x2 - x1)); D.stroke(); }
+  else { D.globalCompositeOperation = "destination-out"; D.strokeStyle = "#000"; D.stroke(); D.globalCompositeOperation = "source-over"; }
+}
+const pPoly = (pts) => (c) => { c.beginPath(); c.moveTo(pts[0], pts[1]); for (let k = 2; k < pts.length; k += 2) c.lineTo(pts[k], pts[k + 1]); c.closePath(); };
+const pEll = (x, y, rx, ry, rot = 0) => (c) => { c.beginPath(); c.ellipse(x, y, Math.max(0.01, rx), Math.max(0.01, ry), rot, 0, TAU); };
 
-let STARS = [], FLAKES = [], PERCHES = [], STEM = [], TWIGS = [], BERRIES = [];
-let time = 0, puffs = [], notes = [], birds = [];
-const farY = (x) => 68 + 3 * Math.sin(x * 0.05 + 1) + 2 * Math.sin(x * 0.11 + 2);
+// ---------- the real sky ----------
 // Bright stars: RA (hours), Dec (degrees), visual magnitude, tint (w white, b blue, y yellow, o orange, r red).
 const CAT = [
   [6.752, -16.716, -1.46, "w"], [14.261, 19.182, -0.05, "o"], [18.616, 38.784, 0.03, "w"], [5.278, 45.998, 0.08, "y"], [5.242, -8.202, 0.13, "b"],
@@ -292,312 +304,470 @@ const CAT = [
   [2.12, 23.462, 2.0, "o"], [1.911, 20.808, 2.64, "y"], [1.892, 19.294, 3.9, "w"], [3.038, 4.09, 2.5, "r"],
   [9.351, 34.393, 3.1, "r"], [12.934, 38.318, 2.9, "w"], [13.198, 27.878, 4.3, "y"], [5.056, 60.442, 4.0, "y"], [4.901, 66.343, 4.3, "b"],
 ];
-const TINT = { w: "238,242,255", b: "176,204,255", y: "255,238,178", o: "255,184,120", r: "255,140,98" };
+const TINT = { w: [238, 242, 255], b: [176, 204, 255], y: [255, 238, 178], o: [255, 184, 120], r: [255, 140, 98] };
 const LAT = (49 * Math.PI) / 180, EL0 = (30 * Math.PI) / 180, SKY_CY = 42, HFOV = (120 * Math.PI) / 180;
 const LST0 = 3.0, LST_RATE = 0.03;    // hours of sidereal time, and hours per second (about 110x real time)
-const hint = { until: 0 };
-const MAG_FIRST = 12, MAG_GAP = [35, 55];
-const MAG = { state: "idle", wait: QS.has("mag") ? 0.5 : MAG_FIRST, x: 0, y: 0, dir: 1, ph: 0, t: 0, from: null, dur: 1, s: 3.7, flying: true, stay: 0 };
-let MAGP = { x: 0, y: 0 };
-const SQ_FIRST = 7, SQ_GAP = [16, 26];
-const SQ = { state: "idle", wait: Infinity, x: 0, y: 0, dir: -1, ph: 0, idx: 0, t: 0, target: 20 };
-const MOON = { x: 0.15, y: 24, r: 8 };
+
+// Looking north from 49 degrees of latitude: the sky turns slowly around the Pole Star.
+function placeStars() {
+  const { cols, rows, Wd, u, GX0, GY0 } = L;
+  for (let k = 0; k < starCells.length; k++) starG[starCells[k]] = 0;
+  starCells.length = 0;
+  const lst = (LST0 + time * LST_RATE) * (Math.PI / 12);
+  const sl = Math.sin(LAT), cl = Math.cos(LAT), sE = Math.sin(EL0), cE = Math.cos(EL0);
+  const k = Wd / 2 / Math.tan(HFOV / 4), mx = MOON.x * Wd;
+  const put = (c, r, g, R, Gc, B) => {
+    if (c < 0 || r < 0 || c >= cols || r >= rows) return;
+    const i = r * cols + c;
+    if (kind[i] !== 3 || bgKind[i]) return;
+    const col = pack(R, Gc, B);
+    if (starG[i]) { if ((starC[i] & 255) >= (col & 255)) return; } else starCells.push(i);
+    starG[i] = g; starC[i] = col;
+  };
+  for (const st of STARS) {
+    const H = lst - st.ra, cH = Math.cos(H), sH = Math.sin(H);
+    const e = -st.cd * sH, n = cl * st.sd - sl * st.cd * cH, up = sl * st.sd + cl * st.cd * cH;
+    if (up < -0.02) continue;
+    const d = cE * n + sE * up, yy = -sE * n + cE * up;
+    if (d < -0.6) continue;
+    const x = Wd / 2 + (e / (1 + d)) * k, y = SKY_CY - (yy / (1 + d)) * k;
+    if (x < 0 || x > Wd || y < 0 || y > farY(x) - 1 || Math.hypot(x - mx, y - MOON.y) < MOON.r * 1.3) continue;
+    const c = Math.floor((GX0 + x * u) / 2), r = Math.floor((GY0 + y * u) / 3);
+    const tw = 0.9 + 0.1 * Math.sin(time * (1.3 + (st.k % 5) * 0.35) + st.ph);
+    const a = clamp(1.16 - 0.08 * st.mag, 0.8, 1) * tw, [R, Gc, B] = st.rgb;
+    put(c, r, st.mag < 2.3 ? 42 : st.mag < 3.5 ? 43 : 46, R * a, Gc * a, B * a);
+    if (st.mag < 1.4) {
+      const q = (st.mag < 0.6 ? 0.6 : 0.42) * a;
+      put(c - 1, r, 45, R * q, Gc * q, B * q); put(c + 1, r, 45, R * q, Gc * q, B * q);
+      put(c, r - 1, 124, R * q, Gc * q, B * q); put(c, r + 1, 124, R * q, Gc * q, B * q);
+    }
+  }
+}
+
+// ---------- things that never move: the moon and the spruces on the far ridge ----------
+function spruce(cx, by, h, rnd) {
+  const n = 7, w = h * 0.3;
+  line(cx, by + 0.3, cx, by - h * 0.12, Math.max(0.5, w * 0.11), "#2b1c14");
+  for (let k = 0; k < n; k++) {
+    const t = k / (n - 1), yb = by - h * 0.08 - t * h * 0.8, tw = w * (1 - t * 0.86) * (0.9 + 0.2 * rnd());
+    const th = (h / n) * 1.55 * (1 - t * 0.2), yt = yb - th;
+    shape(pPoly([cx, yt, cx - tw, yb, cx, yb - th * 0.22]), "#1d4a40", Math.atan2(th, -tw));    // boughs droop outward: / on the left
+    shape(pPoly([cx, yt, cx + tw, yb, cx, yb - th * 0.22]), "#12342e", Math.atan2(th, tw));     // and \ on the right
+    shape(pPoly([cx, yt - 0.15, cx - tw * 0.62, yt + th * 0.6, cx, yt + th * 0.42]), "#e4ecf8", Math.atan2(th, -tw));
+    shape(pPoly([cx, yt - 0.15, cx + tw * 0.62, yt + th * 0.6, cx, yt + th * 0.42]), "#bccbe4", Math.atan2(th, tw));
+  }
+}
+
+function bakeStatic() {
+  const { SW, SH, Wd } = L;
+  staticS = mk(SW, SH); staticD = mk(SW, SH);
+  X = staticS.getContext("2d"); D = staticD.getContext("2d"); setW(X); setW(D);
+  // a young crescent, lit from the lower right, with a hint of earthshine on the rest of the disc
+  const mx = MOON.x * Wd, my = MOON.y, R = MOON.r;
+  shape(pEll(mx, my, R, R), "rgba(96,118,170,0.16)");
+  G2.save(); G2.translate(mx, my); G2.rotate(0.42);
+  shape((c) => { c.beginPath(); c.arc(0, 0, R, -Math.PI / 2, Math.PI / 2); c.ellipse(0, 0, R * 0.5, R, 0, Math.PI / 2, -Math.PI / 2, true); c.closePath(); }, "#f6f1d8");
+  G2.restore();
+  const rnd = mulberry32(SEED + 5);
+  for (const [fx, sc] of [[0.045, 1], [0.1, 0.72], [0.29, 0.92], [0.345, 0.6], [0.56, 0.8], [0.9, 0.7]]) {
+    const x = fx * Wd;
+    spruce(x, farY(x) + 1.5, (16 + 6 * rnd()) * sc, rnd);
+  }
+}
+
+// ---------- branches: they bend under a landing bird and spring back ----------
+function makeRowan() {
+  const Wd = L.Wd, rnd = mulberry32(SEED + 31), N = 40, st = [];
+  const x0 = Wd + 9, x1 = (L.nc === 3 ? 0.42 : 0.56) * Wd;
+  for (let k = 0; k <= N; k++) {
+    const t = k / N;
+    st.push({ t, x: lerp(x0, x1, t), y: 43 + 17 * Math.pow(t, 1.3) - 2.2 * Math.sin(t * Math.PI), w: lerp(3.0, 0.7, Math.pow(t, 0.75)), sn: 0.5 + 0.9 * rnd() });
+  }
+  const B = { stem: st, twigs: [], clusters: [], perches: [], defl: 0, vel: 0, k: 60, c: 5, soft: 1.1 };
+  const blocked = new Set(), nT = clamp(Math.round((x0 - x1) / 10.5), 4, 11);
+  for (let k = 0; k <= nT; k++) {
+    const last = k === nT, up = k % 2 === 0 && !last;
+    const i = last ? N : Math.round(lerp(0.08, 0.93, (k + 0.25 + 0.5 * rnd()) / nT) * N);
+    const a = last ? Math.PI + 0.25 : Math.PI + (up ? 1 : -1) * (0.75 + 0.35 * rnd());      // toward the tip, and up or down
+    const tl = last ? 3 : (6.5 + 4.5 * rnd()) * (1 - 0.35 * st[i].t), pts = [];
+    for (let j = 0; j <= 4; j++) { const f = j / 4; pts.push([Math.cos(a) * tl * f, Math.sin(a) * tl * f + 1.3 * f * f]); }
+    const tw = { i, pts, w: Math.max(0.45, st[i].w * 0.42), end: pts[4] };
+    B.twigs.push(tw);
+    if (up) blocked.add(i);
+    // a corymb of berries hangs from the end of the twig
+    const berries = [], nb = 9 + ((rnd() * 7) | 0);
+    for (let q = 0; q < nb; q++) {
+      const an = rnd() * TAU, d = Math.sqrt(rnd());
+      berries.push({ x: -0.3 + Math.cos(an) * d * 2.4, y: 2.0 + Math.sin(an) * d * 1.6, r: 0.62 + 0.25 * rnd(), col: ["#d83a22", "#d83a22", "#ec5a30", "#b22a1c"][(rnd() * 4) | 0] });
+    }
+    B.clusters.push({ tw, berries, ph: rnd() * TAU });
+  }
+  let lastX = 1e9;
+  const bar = ((L.tr + L.MY) * 3) / L.u;
+  for (let i = 3; i < N; i++) {
+    const x = st[i].x;
+    if (x > Wd - 13 * L.bk || x < 4 || blocked.has(i) || lastX - x < 21 * L.bk || st[i].y - 13 * L.bk < bar || L.muntinX.some((m) => Math.abs(m - x) < 6 * L.bk)) continue;
+    B.perches.push({ i, x, B, taken: null }); lastX = x;
+  }
+  return B;
+}
+
+function makeSnag() {
+  const Wd = L.Wd, rnd = mulberry32(SEED + 77), N = 18, st = [], x1 = L.nc === 3 ? Math.min(0.27 * Wd, 46) : 0.44 * Wd;
+  for (let k = 0; k <= N; k++) {
+    const t = k / N;
+    st.push({ t, x: lerp(-9, x1, t), y: 47 + 4.5 * t - 1.8 * Math.sin(t * Math.PI), w: lerp(2.6, 0.6, Math.pow(t, 0.8)), sn: 0.5 + 0.9 * rnd() });
+  }
+  const B = { stem: st, twigs: [], clusters: [], perches: [], defl: 0, vel: 0, k: 80, c: 7, soft: 0.45 };
+  for (const [f, a, tl] of [[0.42, -0.95, 7], [0.82, 0.75, 4]]) {
+    const i = Math.round(f * N), pts = [];
+    for (let j = 0; j <= 4; j++) { const q = j / 4; pts.push([Math.cos(a) * tl * q, Math.sin(a) * tl * q + 0.8 * q * q]); }
+    B.twigs.push({ i, pts, w: Math.max(0.4, st[i].w * 0.4), end: pts[4] });
+  }
+  let best = 0;
+  for (let i = 0; i <= N; i++) if (Math.abs(st[i].x - x1 * 0.64) < Math.abs(st[best].x - x1 * 0.64)) best = i;
+  B.perches.push({ i: best, x: st[best].x, B, taken: null });
+  return B;
+}
+
+function updateBranch(B, dt) {
+  let load = 0;
+  for (const p of B.perches) if (p.taken && p.taken.mode === "sit") load += p.taken.sp.weight * B.stem[p.i].t ** 2;
+  B.vel += (-B.k * (B.defl - load * B.soft) - B.c * B.vel) * dt;
+  B.defl += B.vel * dt;
+}
+function perchXY(p) { const s = p.B.stem[p.i]; return [s.x, s.y + p.B.defl * s.t * s.t - s.w * 0.5 - 0.3]; }
+
+function drawBranch(B) {
+  const st = B.stem, d = B.defl, py = (i) => st[i].y + d * st[i].t * st[i].t;
+  for (const tw of B.twigs) {
+    const bx = st[tw.i].x, by = py(tw.i);
+    for (let j = 1; j < tw.pts.length; j++) line(bx + tw.pts[j - 1][0], by + tw.pts[j - 1][1], bx + tw.pts[j][0], by + tw.pts[j][1], lerp(tw.w, tw.w * 0.5, j / 4), BARK);
+  }
+  for (let i = 0; i < st.length - 1; i++) line(st[i].x, py(i), st[i + 1].x, py(i + 1), st[i].w, BARK);
+  for (let i = 0; i < st.length - 1; i++) {
+    line(st[i].x, py(i) - st[i].w * 0.5, st[i + 1].x, py(i + 1) - st[i + 1].w * 0.5, Math.max(0.45, st[i].w * 0.42 * st[i].sn), SNOW, false);
+  }
+  for (const cl of B.clusters) {
+    const tw = cl.tw, ex = st[tw.i].x + tw.end[0] + 0.22 * Math.sin(time * 0.8 + cl.ph) + B.vel * 0.05, ey = py(tw.i) + tw.end[1];
+    for (let q = 0; q < cl.berries.length; q += 4) line(ex - tw.end[0] * 0.02, ey, ex + cl.berries[q].x, ey + cl.berries[q].y, 0.22, BARK);
+    for (const b of cl.berries) shape(pEll(ex + b.x, ey + b.y, b.r, b.r), b.col);
+    shape(pEll(ex - 0.3, ey + 0.55, 2.1, 0.6), SNOW);
+  }
+}
+
+// ---------- birds: anatomy ----------
+// A bird is drawn facing +x around the middle of its body, in units of roughly half a body length.
+const SPEC = {
+  bullfinch: { flock: "bullfinch", s: 2.5, plump: 1, headR: 1.12, TL: 3.0, notch: true, bill: [0.55, 0.42], billCol: "#34343e", legY: 2.05, leg: "#6a5248",
+    under: "#e8566c", vent: "#f0f0f4", back: "#8c95ab", rump: "#f4f4f8", cap: "#14141b", cheek: "#e8566c", head: "finch",
+    wing: "#1c1c26", wingBar: "#dfe3ec", barW: 0.42, wingUnder: "#aab1c2", tail: "#14141b", eye: [104, 104, 122],
+    wingL: 4.3, hz: 6.5, bound: true, boundT: 0.5, boundA: 1.2, speed: 34, perchPitch: -0.36, flickA: 0.3,
+    stay: [9, 22], away: [5, 14], peck: 0.3, turn: 0.12, flick: 0.1, hop: 0.04, weight: 1 },
+  bullfinchF: { base: "bullfinch", under: "#b59c90", cheek: "#b59c90", back: "#8d877c" },
+  tit: { flock: "tit", s: 2.0, plump: 0.92, headR: 1.08, TL: 2.7, bill: [0.42, 0.2], billCol: "#3a3a48", legY: 1.95, leg: "#5a6680",
+    under: "#f4d63a", vent: "#ece6b8", back: "#5f8fd2", cap: "#2f6fe6", cheek: "#f7f7f3", dark: "#1a2f6c", stripe: "#3a477a", head: "tit",
+    wing: "#2c5fc8", wingBar: "#f2f5fb", barW: 0.26, wingUnder: "#c6d0e4", tail: "#2a58b8", eye: [14, 16, 26],
+    wingL: 3.9, hz: 8, bound: true, boundT: 0.42, boundA: 1.0, speed: 40, perchPitch: -0.3, flickA: 0.45,
+    stay: [3, 7], away: [14, 34], peck: 1.1, turn: 0.55, flick: 0.5, hop: 0.3, weight: 0.5 },
+  sparrow: { flock: "sparrow", s: 2.3, plump: 0.95, headR: 1.1, TL: 2.7, bill: [0.6, 0.36], billCol: "#4a443e", legY: 1.95, leg: "#b48e74",
+    under: "#cbc3b5", vent: "#dad4c8", back: "#9b6c40", streaks: "#3a2a1c", cap: "#7f838c", nape: "#8c4c24", cheek: "#d8d2c6", bib: "#17171c", head: "sparrow",
+    wing: "#8c6038", wingBar: "#f0eadc", barW: 0.26, wingUnder: "#b8afa0", tail: "#6c4c32", eye: [16, 14, 14],
+    wingL: 3.9, hz: 8.5, bound: false, boundT: 0.5, boundA: 0, speed: 42, perchPitch: -0.3, flickA: 0.4,
+    stay: [4, 10], away: [9, 24], peck: 0.8, turn: 0.4, flick: 0.3, hop: 0.2, weight: 0.8 },
+  sparrowF: { base: "sparrow", cap: "#9a8468", nape: "#a08a6a", bib: null, under: "#c9bfae" },
+  magpie: { flock: "magpie", s: 3.0, plump: 0.9, headR: 1.05, TL: 6.8, wedge: true, bill: [1.25, 0.4], billCol: "#1c1d28", legY: 2.2, leg: "#1c1d28",
+    under: "#f4f4f2", breast: "#0d0e18", breastE: [1.9, -0.3, 1.6, 1.5], vent: "#0d0e18", ventE: [-1.9, 0.95, 0.9, 0.6],
+    back: "#0d0e18", cap: "#0d0e18", cheek: "#0d0e18", scap: "#f4f4f2", head: "magpie",
+    wing: "#16307a", wingPrim: "#f4f4f2", wingUnder: "#d9dbe2", tail: "#101c48", tailGloss: "#1f3f92", eye: [128, 132, 150],
+    wingL: 5.4, hz: 4.2, bound: false, glide: true, boundT: 1.2, boundA: 0, speed: 30, perchPitch: -0.22, flickA: 0.55,
+    stay: [7, 12], away: [120, 240], peck: 0.15, turn: 0.3, flick: 0.5, hop: 0, weight: 3 },
+};
+for (const k in SPEC) {
+  if (SPEC[k].base) SPEC[k] = Object.assign({}, SPEC[SPEC[k].base], SPEC[k]);
+  const sp = SPEC[k];
+  sp.wingFar = shade(sp.wing, 0.7); sp.wingUnderFar = shade(sp.wingUnder, 0.7);
+  if (sp.wingPrim) sp.wingPrimFar = shade(sp.wingPrim, 0.78);
+}
+
+const HEADS = {
+  finch(H, r, sp) {                                    // black cap down to the eye and around the bill
+    shape(pEll(H[0] - 0.05, H[1] - 0.55, r * 1.3, r * 0.75), sp.cap);
+    shape(pEll(H[0] + 0.85, H[1] + 0.05, 0.7, 0.7), sp.cap);
+  },
+  tit(H, r, sp) {                                      // blue cap, white face, dark line through the eye and around the cheek
+    shape(pEll(H[0] - 0.1, H[1] - 0.8, r * 1.05, r * 0.5), sp.cap);
+    line(H[0] + r, H[1] - 0.05, H[0] - r, H[1] - 0.15, 0.22, sp.dark, false);
+    line(H[0] - r * 0.9, H[1] - 0.1, H[0] - 0.45, H[1] + 0.82, 0.3, sp.dark, false);
+    line(H[0] - 0.45, H[1] + 0.82, H[0] + 0.75, H[1] + 0.85, 0.3, sp.dark, false);
+  },
+  sparrow(H, r, sp) {                                  // grey crown, chestnut behind the eye, black bib
+    shape(pEll(H[0] - 0.05, H[1] - 0.78, r * 1.1, r * 0.5), sp.cap);
+    shape(pEll(H[0] - 0.6, H[1] - 0.15, 0.78, 0.5), sp.nape);
+    if (sp.bib) { shape(pEll(H[0] + 0.6, H[1] + 0.85, 0.7, 0.5), sp.bib); line(H[0] + r, H[1] - 0.1, H[0] + 0.3, H[1] - 0.2, 0.2, sp.bib, false); }
+  },
+  magpie() {},
+};
+
+// One wingbeat: a quick power stroke down, then a slower recovery with the wing half folded.
+function wingStroke(p, up, down) {
+  if (p < 0.45) return [lerp(up, -down, smooth(p / 0.45)), 1];
+  const e = smooth((p - 0.45) / 0.55);
+  return [lerp(-down, up, e), 1 - 0.32 * Math.sin(Math.PI * e)];
+}
+
+// A wing seen from the side: it does not swing like an oar, it rises above the shoulder and drops below it,
+// and is almost edge-on as it passes the level of the back. th is the stroke angle, positive when raised.
+function flightWing(sp, th, sp2, far) {
+  const ky = sp.plump, Sx = 0.75, Sy = -0.8 * ky, Lw = sp.wingL * sp2, h = Lw * Math.sin(th);
+  const upper = far ? th > 0 : th <= 0;                // which surface of this wing faces us
+  const col = far ? (upper ? sp.wingFar : sp.wingUnderFar) : upper ? sp.wing : sp.wingUnder;
+  const ox = far ? 0.5 : 0, oy = far ? -0.1 : 0;
+  const r1x = Sx + 0.65 + ox, r1y = Sy + 0.25 + oy, r2x = Sx - 1.9 + ox, r2y = Sy + 0.6 + oy;
+  if (Math.abs(h) < 0.5) { shape(pEll((r1x + r2x) / 2 - 0.5, (r1y + r2y) / 2 - h * 0.5, 1.9, 0.3, 0.1), col, 0); return; }
+  const tx = Sx - 0.9 - 0.5 * Math.cos(th) + ox, ty = Sy - h + oy, mx = (r1x + r2x) / 2, my = (r1y + r2y) / 2;
+  const wing = (c) => { c.beginPath(); c.moveTo(r1x, r1y); c.quadraticCurveTo(r1x + 0.15, Sy - h * 0.75 + oy, tx, ty); c.quadraticCurveTo(r2x - 0.8, Sy - h * 0.5 + oy, r2x, r2y); c.closePath(); };
+  const wa = Math.atan2(ty - my, tx - mx);
+  shape(wing, col, wa);
+  G2.save(); G2.clip(wing);
+  if (sp.wingPrim) shape(pEll(lerp(mx, tx, 0.6), lerp(my, ty, 0.6), Math.hypot(tx - mx, ty - my) * 0.3, 0.8, wa), far ? sp.wingPrimFar : sp.wingPrim, wa);
+  else if (upper && !far && sp.wingBar) shape(pEll(lerp(mx, tx, 0.34), lerp(my, ty, 0.34), 0.24, 1.2, wa), sp.wingBar, wa);
+  G2.restore();
+}
+
+function drawBird(b) {
+  const sp = b.sp, ky = sp.plump, fly = b.mode === "fly", fl = b.flare || 0, hr = sp.headR;
+  const z = b.s * (1 + 0.07 * (b.fluff || 0));
+  G2.save(); G2.translate(b.x, b.y); G2.scale(b.dir * z, z);
+  if (!fly) {                                          // legs gripping the perch
+    const ly = sp.legY;
+    line(-0.4, 0.9 * ky, -0.3, ly, 0.24, sp.leg); line(0.3, 0.95 * ky, 0.4, ly, 0.24, sp.leg);
+    line(-0.75, ly, 0.15, ly, 0.24, sp.leg); line(-0.05, ly, 0.85, ly, 0.24, sp.leg);
+  }
+  G2.rotate(b.pitch);
+  if (fly && fl > 0.05) {                              // legs reach for the branch
+    line(0.4, 1.0 * ky, 0.4 + fl, 1.2 * ky + 0.9 * fl, 0.24, sp.leg); line(-0.1, 1.1 * ky, -0.1 + fl, 1.3 * ky + 0.9 * fl, 0.24, sp.leg);
+  }
+  const flap = fly && b.wingP >= 0, glide = fly && b.wingP === -2;
+  let th = 0.14, sp2 = 1;
+  if (flap) [th, sp2] = wingStroke(b.wingP, fl > 0 ? 1.25 : 1.15, fl > 0 ? 0.7 : 0.9);
+  if (flap || glide) flightWing(sp, th, sp2, true);
+
+  // tail
+  G2.save(); G2.translate(-1.8, 0.1 * ky); G2.rotate(b.tailAng || 0);
+  const TL = sp.TL, fan = b.tailFan || 0, e = 0.5 + 0.85 * fan;
+  const tp = sp.wedge ? [0, -0.5, -TL * 0.45, -(0.85 + 0.5 * fan), -TL, -0.22, -TL, 0.22, -TL * 0.45, 0.85 + 0.5 * fan, 0, 0.5]
+    : sp.notch ? [0, -0.5, -TL, -e, -TL + 0.45, 0, -TL, e, 0, 0.5] : [0, -0.5, -TL, -e, -TL - 0.12, 0, -TL, e, 0, 0.5];
+  shape(pPoly(tp), sp.tail, 0);
+  if (sp.tailGloss) shape(pPoly([-0.4, -0.3, -TL * 0.5, -0.45, -TL * 0.92, -0.1, -TL * 0.92, 0.1, -TL * 0.5, 0.2, -0.4, 0.15]), sp.tailGloss, 0);
+  G2.restore();
+
+  // body: an egg, with the back, breast and vent painted inside it
+  const body = (c) => {
+    c.beginPath(); c.moveTo(-2.15, 0.05 * ky);
+    c.bezierCurveTo(-2.0, -1.2 * ky, -0.5, -1.7 * ky, 0.9, -1.5 * ky);
+    c.bezierCurveTo(1.9, -1.3 * ky, 2.45, -0.6 * ky, 2.3, 0.15 * ky);
+    c.bezierCurveTo(2.15, 1.05 * ky, 1.2, 1.6 * ky, 0.0, 1.55 * ky);
+    c.bezierCurveTo(-1.0, 1.5 * ky, -1.95, 1.0 * ky, -2.15, 0.05 * ky); c.closePath();
+  };
+  shape(body, sp.under);
+  G2.save(); G2.clip(body);
+  if (sp.breast) { const q = sp.breastE; shape(pEll(q[0], q[1] * ky, q[2], q[3] * ky), sp.breast); }
+  if (sp.vent) { const q = sp.ventE || [-1.3, 1.25, 1.5, 0.75]; shape(pEll(q[0], q[1] * ky, q[2], q[3] * ky), sp.vent); }
+  shape(pEll(-0.75, -1.8 * ky, 3.3, 1.9 * ky, 0.1), sp.back);
+  if (sp.streaks) for (let k = 0; k < 4; k++) line(0.6 - k * 0.75, -1.35 * ky, 0.05 - k * 0.75, -0.55 * ky, 0.2, sp.streaks, false);
+  if (sp.bib) shape(pEll(1.75, -0.35 * ky, 0.7, 0.9 * ky), sp.bib);
+  if (sp.stripe) line(1.55, 0.4 * ky, 0.3, 1.45 * ky, 0.28, sp.stripe, false);
+  if (fly && sp.rump) shape(pEll(-1.8, -0.5 * ky, 0.75, 0.6 * ky), sp.rump);
+  shape(pEll(-0.2, 2.0 * ky, 2.8, 0.95 * ky), "rgba(6,10,30,0.3)");     // the belly falls into shadow
+  G2.restore();
+
+  // folded wing lying along the flank
+  if (!flap && !glide) {
+    const fw = (c) => {
+      c.beginPath(); c.moveTo(0.95, -0.6 * ky);
+      c.bezierCurveTo(0.3, -1.3 * ky, -1.2, -1.05 * ky, -2.85, 0.3 * ky);
+      c.bezierCurveTo(-1.9, 0.8 * ky, -0.6, 0.85 * ky, 0.45, 0.5 * ky);
+      c.bezierCurveTo(0.85, 0.25 * ky, 1.05, -0.2 * ky, 0.95, -0.6 * ky); c.closePath();
+    };
+    const wa = Math.atan2(0.9 * ky, -3.8);
+    shape(fw, sp.wing, wa);
+    G2.save(); G2.clip(fw);
+    if (sp.wingBar) { const w = sp.barW; shape(pPoly([0.05, -1.3 * ky, 0.05 - w, -1.3 * ky, -0.5 - w, 1.0 * ky, -0.5, 1.0 * ky]), sp.wingBar, wa); }
+    if (sp.streaks) { line(-0.9, -0.5 * ky, -2.4, 0.25 * ky, 0.2, sp.streaks, false); line(-0.6, 0.1 * ky, -2.0, 0.55 * ky, 0.2, sp.streaks, false); }
+    G2.restore();
+    if (sp.scap) shape(pEll(-0.1, -0.85 * ky, 1.55, 0.5 * ky, 0.22), sp.scap);
+  }
+
+  // head, bill, eye
+  const H = fly ? [2.4, -0.55 * ky] : [1.8, -1.2 * ky];
+  const head = pEll(H[0], H[1], hr, hr);
+  shape(head, sp.cheek);
+  G2.save(); G2.clip(head); HEADS[sp.head](H, hr, sp); G2.restore();
+  const bl = sp.bill[0], bh = sp.bill[1];
+  shape(pPoly([H[0] + hr * 0.8, H[1] - bh + 0.05, H[0] + hr + bl, H[1] + 0.12, H[0] + hr * 0.8, H[1] + bh + 0.15]), sp.billCol, 0);
+  const ex = H[0] + 0.42, ey = H[1] - 0.2, m = X.getTransform();
+  b.eye = [m.a * ex + m.c * ey + m.e, m.b * ex + m.d * ey + m.f];
+
+  if (flap || glide) flightWing(sp, th, sp2, false);
+  G2.restore();
+}
+
+// ---------- birds: behaviour ----------
+function newBird(name, wait) {
+  const sp = SPEC[name];
+  return { sp, s: sp.s * (L.bk || 1) * (0.96 + 0.08 * Math.random()), x: -60, y: -60, dir: 1, mode: "away", t: 0, wait, pitch: 0, wingP: -1, beat: Math.random(), flare: 0,
+    tailAng: 0, tailFan: 0, peck: 0, turn: 0, flick: 0, hopY: 0, fluff: 0, fluffT: 0, perch: null, sitLeft: 0, scared: false, panic: false, eye: null,
+    ft: 0, dur: 1, kf: "land", p0: null, p1: null, p2: null, p3: null };
+}
+
+function spawnPoint(b) {
+  const Wd = L.Wd, r = Math.random();
+  if (b === MAG) return [-24, 14 + Math.random() * 24];
+  return r < 0.4 ? [-16, 4 + Math.random() * 40] : r < 0.9 ? [Wd + 16, 2 + Math.random() * 32] : [Wd * (0.25 + 0.6 * Math.random()), -14];
+}
+const seat = (b, p) => { const q = perchXY(p); return [q[0], q[1] - b.sp.legY * b.s]; };
+
+function freePerch(b) {
+  if (b === MAG) { const p = SNAG.perches[0]; return p && !p.taken ? p : null; }
+  const f = ROWAN.perches.filter((p) => !p.taken);
+  if (f.length < Math.min(2, ROWAN.perches.length)) return null;
+  const mates = BIRDS.filter((m) => m !== b && m.sp.flock === b.sp.flock && m.perch);
+  if (mates.length && Math.random() < 0.75) {
+    const mx = mates[(Math.random() * mates.length) | 0].perch.x;
+    return f.reduce((best, p) => (Math.abs(p.x - mx) < Math.abs(best.x - mx) ? p : best));
+  }
+  return f[(Math.random() * f.length) | 0];
+}
+
+function launch(b, to, kf) {
+  const dx = to[0] - b.x, dy = to[1] - b.y, dist = Math.hypot(dx, dy), sg = dx >= 0 ? 1 : -1;
+  b.mode = "fly"; b.ft = 0; b.kf = kf; b.p0 = [b.x, b.y]; b.p3 = to; b.dir = sg; b.peck = 0; b.turn = 0; b.hopY = 0;
+  if (kf === "land") {                                 // swoop in below the perch and rise onto it
+    b.p1 = [b.x + dx * 0.45, b.y + dy * 0.3 - 3]; b.p2 = [to[0] - sg * Math.min(10, dist * 0.3), to[1] + Math.min(5, dist * 0.15)];
+    b.dur = clamp(dist / b.sp.speed, 1.0, 4.5);
+  } else if (kf === "hop") {
+    b.p1 = [b.x + dx * 0.25, b.y - 4.5]; b.p2 = [to[0] - dx * 0.25, to[1] - 4.5]; b.dur = 0.5 + dist * 0.012;
+  } else {
+    b.p1 = [b.x + sg * 5, b.y - 8]; b.p2 = [to[0] - dx * 0.35, to[1] - dy * 0.3 + 4];
+    b.dur = clamp(dist / (b.sp.speed * (b.scared ? 1.5 : 1.1)), 0.9, 4);
+  }
+}
+
+function snowDust(x, y, n) {
+  for (let k = 0; k < n; k++) dust.push({ x: x + (Math.random() - 0.5) * 5, y: y + Math.random(), vx: (Math.random() - 0.5) * 3, vy: Math.random() * 2, life: 1, ch: [46, 46, 58, 42, 39][(Math.random() * 5) | 0] });
+}
+
+function leave(b) {
+  const sp = b.sp, p = b.perch, t = p.B.stem[p.i].t, q = perchXY(p);
+  p.taken = null; b.perch = null; b.scared = b.panic; b.panic = false;
+  p.B.vel += 3 * sp.weight * t * t; snowDust(q[0], q[1], 4 + sp.weight * 2);
+  launch(b, spawnPoint(b), "leave");
+  for (const m of BIRDS) if (m !== b && m.sp.flock === sp.flock && m.mode === "sit") m.sitLeft = Math.min(m.sitLeft, 0.3 + Math.random() * 1.6);
+}
+
+function flightStep(b, dt) {
+  const sp = b.sp, kf = b.kf;
+  b.ft += dt;
+  const tau = Math.min(1, b.ft / b.dur);
+  const u = kf === "land" ? 1 - Math.pow(1 - tau, 1.8) : kf === "hop" ? smooth(tau) : Math.pow(tau, 1.5);
+  const v = 1 - u, a = v * v * v, c1 = 3 * v * v * u, c2 = 3 * v * u * u, d = u * u * u;
+  let nx = a * b.p0[0] + c1 * b.p1[0] + c2 * b.p2[0] + d * b.p3[0], ny = a * b.p0[1] + c1 * b.p1[1] + c2 * b.p2[1] + d * b.p3[1];
+  const landing = kf !== "leave";
+  const flare = landing ? smooth(clamp((tau - (kf === "hop" ? 0.5 : 0.8)) / (kf === "hop" ? 0.45 : 0.18), 0, 1)) : 0;
+  // small birds bound: a burst of wingbeats, then a short dip with the wings shut
+  const cyc = (b.ft / sp.boundT) % 1, env = kf === "hop" ? 0 : clamp(Math.min((tau * b.dur) / 0.5, ((1 - tau) * b.dur) / 0.7), 0, 1);
+  let wingP = -3;
+  if (flare === 0 && env > 0.6) {
+    if (sp.bound) { ny += sp.boundA * env * (cyc < 0.6 ? Math.cos((Math.PI * cyc) / 0.6) : -Math.cos((Math.PI * (cyc - 0.6)) / 0.4)); if (cyc >= 0.6) wingP = -1; }
+    else if (sp.glide && cyc > 0.72) wingP = -2;
+  }
+  const vx = (nx - b.x) / dt, vy = (ny - b.y) / dt;
+  b.x = nx; b.y = ny;
+  b.beat += dt * sp.hz * (flare > 0 ? 1.25 : 1);
+  b.wingP = wingP === -3 ? b.beat % 1 : wingP;
+  const want = lerp(clamp(Math.atan2(vy, Math.abs(vx) + 1e-3), -0.55, 0.55), -0.95, flare);
+  b.pitch += (want - b.pitch) * Math.min(1, dt * 12);
+  b.flare = flare; b.tailFan = flare; b.tailAng = -0.35 * flare;
+  if (tau < 1) return;
+  b.flare = 0; b.tailFan = 0; b.wingP = -1;
+  if (landing) {
+    const p = b.perch, t = p.B.stem[p.i].t, q = perchXY(p);
+    b.mode = "sit"; p.B.vel += 5 * sp.weight * t * t; snowDust(q[0], q[1], 4 + sp.weight * 3);
+    if (b === MAG) for (const m of BIRDS) if (m.mode === "sit" && (m.sp.flock !== "bullfinch" || Math.random() < 0.35)) { m.sitLeft = Math.min(m.sitLeft, Math.random() * 0.5); m.panic = true; }
+  } else {
+    b.mode = "away"; b.t = 0;
+    b.wait = b === MAG ? (QS.has("mag") ? 9 : span(sp.away)) : b.scared ? 12 + Math.random() * 14 : ZOO ? 2 : span(sp.away);
+    b.scared = false;
+  }
+}
+
+function updateBird(b, dt) {
+  const sp = b.sp;
+  if (b.mode === "away") {
+    b.t += dt;
+    if (b.t < b.wait) return;
+    if (b !== MAG && MAG.mode !== "away" && sp.flock !== "bullfinch") { b.t = 0; b.wait = 2 + Math.random() * 3; return; }
+    const p = freePerch(b);
+    if (!p) { b.t = 0; b.wait = 1.5 + Math.random() * 3; return; }
+    const from = spawnPoint(b);
+    b.x = from[0]; b.y = from[1]; b.pitch = 0; b.perch = p; p.taken = b;
+    b.sitLeft = ZOO ? 90 : span(sp.stay);
+    launch(b, seat(b, p), "land");
+    for (const m of BIRDS) if (m !== b && m.sp.flock === sp.flock && m.mode === "away") m.wait = Math.min(m.wait, m.t + 0.5 + Math.random() * 2.2);
+    return;
+  }
+  if (b.mode === "fly") { flightStep(b, dt); return; }
+
+  // perched: peck, look the other way, flick the tail, hop along the branch
+  let want = sp.perchPitch;
+  if (b.peck > 0) { b.peck += dt / 0.42; if (b.peck >= 1) b.peck = 0; else want += 0.85 * Math.sin(Math.PI * b.peck); }
+  if (b.turn > 0) {
+    const k0 = b.turn; b.turn += dt / 0.18;
+    if (k0 < 0.5 && b.turn >= 0.5) b.dir = -b.dir;
+    if (b.turn >= 1) b.turn = 0;
+    b.hopY = b.turn > 0 ? 0.9 * Math.sin(Math.PI * b.turn) : 0;
+  }
+  if (b.flick > 0) { b.flick += dt / 0.3; if (b.flick >= 1) b.flick = 0; }
+  b.tailAng = -0.08 + (b.flick > 0 ? sp.flickA * Math.sin(Math.PI * b.flick) : 0);
+  b.pitch += (want - b.pitch) * Math.min(1, dt * 14);
+  if (b.fluffT > 0) b.fluffT -= dt;
+  b.fluff += ((b.fluffT > 0 ? 1 : 0) - b.fluff) * Math.min(1, dt * 2);
+  const q = seat(b, b.perch);
+  b.x = q[0]; b.y = q[1] - b.hopY;
+  b.sitLeft -= dt;
+  if (b.sitLeft <= 0) { leave(b); return; }
+  if (b.peck === 0 && b.turn === 0) {
+    const r = Math.random() / dt;
+    if (r < sp.peck) b.peck = 1e-4;
+    else if (r < sp.peck + sp.turn) b.turn = 1e-4;
+    else if (r < sp.peck + sp.turn + sp.flick) b.flick = 1e-4;
+    else if (r < sp.peck + sp.turn + sp.flick + sp.hop) {
+      const B = b.perch.B, here = b.perch.x, opts = B.perches.filter((p) => !p.taken && Math.abs(p.x - here) < 27);
+      if (opts.length) {
+        const p = opts[(Math.random() * opts.length) | 0], t = B.stem[b.perch.i].t;
+        B.vel += 2 * sp.weight * t * t;
+        b.perch.taken = null; b.perch = p; p.taken = b;
+        launch(b, seat(b, p), "hop");
+      }
+    } else if (r < sp.peck + sp.turn + sp.flick + sp.hop + 0.03) b.fluffT = 1.5 + Math.random() * 2.5;
+  }
+}
 
 function buildWorld() {
-  const Wd = L.Wd, rnd = mulberry32(SEED + 31);
+  const Wd = L.Wd, rnd = mulberry32(SEED + 33);
   STARS = CAT.map(([ra, dec, mag, c], k) => { const d = (dec * Math.PI) / 180; return { ra: (ra * Math.PI) / 12, sd: Math.sin(d), cd: Math.cos(d), mag, rgb: TINT[c], ph: rnd() * TAU, k }; });
-  FLAKES = []; const nf = Math.round((Wd * 100) / 60);
-  for (let k = 0; k < nf; k++) FLAKES.push({ x: rnd() * (Wd + 10) - 5, y: rnd() * 104 - 2, z: 0.2 + rnd() * 0.8, ph: rnd() * TAU });
-  // a rowan branch sweeps in from the right edge, heavy with berries
-  STEM = []; TWIGS = []; BERRIES = []; PERCHES = [];
-  const x0 = Wd + 8, x1 = 0.4 * Wd;
-  for (let k = 0; k <= 30; k++) { const t = k / 30; STEM.push({ x: lerp(x0, x1, t), y: 30 + 16 * t + 6 * Math.sin(t * 3.1) + 5 * t * t, w: lerp(3.4, 0.9, t) }); }
-  const nT = clamp(Math.round(Wd / 16), 6, 12);
-  for (let k = 0; k < nT; k++) {
-    const t = 0.12 + (k / nT) * 0.84, i = Math.min(30, Math.round(t * 30)), p = STEM[i];
-    const up = k % 2 === 0 ? -1 : 1, len = 8 + rnd() * 8;
-    const ex = p.x - (3 + rnd() * 6), ey = p.y + up * len * (0.6 + rnd() * 0.5);
-    TWIGS.push({ x: p.x, y: p.y, cx: p.x - 2, cy: p.y + up * len * 0.2, ex, ey, w: Math.max(0.5, p.w * 0.5) });
-    const n = 4 + ((rnd() * 3) | 0);
-    for (let b = 0; b < n; b++) { const a = rnd() * TAU, d = Math.sqrt(rnd()) * 2.4; BERRIES.push({ x: ex + Math.cos(a) * d, y: ey + Math.sin(a) * d * 0.8, r: 0.6 + rnd() * 0.3 }); }
-  }
-  for (let i = 5; i <= 28; i += 3) PERCHES.push({ x: STEM[i].x, y: STEM[i].y - STEM[i].w * 0.5, taken: null });
-  MAGP = { x: 0.19 * Wd, y: 39.6 };
-  birds = [];
-  const nb = clamp(Math.round(Wd / 38), 3, 5);
-  for (let k = 0; k < 2; k++) birds.push({ kind: "tit", x: Wd + 12, y: 10 + Math.random() * 30, dir: -1, ph: Math.random() * 6, state: "wait", t: 0, wait: 6 + k * 9 + Math.random() * 6, perch: null, from: null, dur: 1, peck: 0, stay: 0, s: 2.7, flying: true });
-  for (let k = 0; k < 2; k++) birds.push({ kind: "sparrow", x: Wd + 12, y: 10 + Math.random() * 30, dir: -1, ph: Math.random() * 6, state: "wait", t: 0, wait: 3 + k * 7 + Math.random() * 6, perch: null, from: null, dur: 1, peck: 0, stay: 0, s: 2.8, flying: true });
-  for (let k = 0; k < nb; k++) birds.push({ x: Wd + 12, y: 10 + Math.random() * 30, dir: -1, ph: Math.random() * 6, state: "wait", t: 0, wait: 0.3 + k * 1.6 + Math.random() * 2, perch: null, from: null, dur: 1, peck: 0, stay: 0, s: 3.1, flying: true });
-  if (QS.has("zoo")) birds.forEach((b, i) => { b.wait = 0.2 + i * 0.35; });
+  FLAKES = [];
+  for (let k = 0, nf = Math.round((Wd * 100) / 60); k < nf; k++) FLAKES.push({ x: rnd() * (Wd + 10) - 5, y: rnd() * 104 - 2, z: 0.2 + rnd() * 0.8, ph: rnd() * TAU });
+  ROWAN = makeRowan(); SNAG = makeSnag(); dust = [];
+  const names = Wd > 110 ? ["bullfinch", "bullfinchF", "sparrow", "tit", "bullfinch", "sparrowF", "tit"] : ["bullfinch", "bullfinchF", "sparrow", "tit"];
+  const first = { bullfinch: 1, sparrow: 9, tit: 17 }, seen = {};
+  BIRDS = names.map((nm, k) => {
+    const f = SPEC[nm].flock; seen[f] = (seen[f] || 0) + 1;
+    return newBird(nm, ZOO ? 0.3 + k * 0.5 : first[f] + (seen[f] - 1) * 1.4 + Math.random());
+  });
+  MAG = newBird("magpie", QS.has("mag") ? 0.5 : 45 + Math.random() * 25);
 }
-
-function bakeSky() {
-  X = skyC.getContext("2d"); setW(X);
-  const Wd = L.Wd;
-  const g = X.createLinearGradient(0, 0, 0, 80);
-  g.addColorStop(0, "#0a1a4c"); g.addColorStop(0.5, "#15336f"); g.addColorStop(1, "#2e5a9e");
-  X.fillStyle = g; X.fillRect(-6, -6, Wd + 12, 130);
-  // a fixed crescent moon with a faint earthshine disc
-  const mx = MOON.x * Wd, my = MOON.y, R = MOON.r;
-  const h = X.createRadialGradient(mx, my, R * 0.6, mx, my, R * 5);
-  h.addColorStop(0, "rgba(200,214,245,0.3)"); h.addColorStop(1, "rgba(200,214,245,0)");
-  X.fillStyle = h; X.fillRect(mx - R * 5, my - R * 5, R * 10, R * 10);
-  ell(mx, my, R, R, "rgba(70,84,124,0.55)");
-  X.save(); X.beginPath(); X.arc(mx, my, R, 0, TAU); X.clip();
-  X.beginPath(); X.rect(mx - R * 2, my - R * 2, R * 4, R * 4); X.arc(mx + R * 0.52, my - R * 0.12, R * 0.9, 0, TAU);
-  X.fillStyle = "#f4f1dc"; X.fill("evenodd"); X.restore();
-}
-
-function spruce(cx, by, h, w, rnd) {
-  const n = 9, tierH = h / (n * 0.58);
-  ln(cx, by + 0.4, cx, by - h * 0.14, Math.max(0.5, w * 0.1), "#2b1c14");
-  for (let k = 0; k < n; k++) {
-    const t = k / (n - 1);
-    const yb = by - h * 0.1 - t * h * 0.86, tw = w * (1 - t * 0.88) * (0.88 + rnd() * 0.24), th = tierH * (1 - t * 0.25), yt = yb - th;
-    X.beginPath(); X.moveTo(cx, yt);
-    X.quadraticCurveTo(cx - tw * 0.4, yb - th * 0.5, cx - tw, yb + 0.5);
-    const m = 4;
-    for (let j = 1; j <= m; j++) { const px = cx - tw + (2 * tw * j) / m; X.quadraticCurveTo(px - tw / m, yb - 1.4 - rnd() * 0.6, px, yb + 0.3 + rnd() * 0.7); }
-    X.quadraticCurveTo(cx + tw * 0.4, yb - th * 0.5, cx, yt);
-    X.fillStyle = "#12342e"; X.fill();
-    poly([cx, yt, cx - tw * 0.98, yb, cx - tw * 0.1, yb], "rgba(70,130,112,0.32)");
-    const sy = yt + th * 0.62, sw = tw * 0.66;
-    X.beginPath(); X.moveTo(cx, yt - 0.25); X.lineTo(cx - sw, sy);
-    for (let j = 1; j <= 3; j++) { const px = cx - sw + (2 * sw * j) / 3; X.quadraticCurveTo(px - sw / 3, sy - 0.9 - rnd() * 0.4, px, sy + rnd() * 0.5); }
-    X.lineTo(cx, yt - 0.25); X.fillStyle = "#eef3fc"; X.fill();
-  }
-  ell(cx, by + 0.6, w * 1.05, 0.9, "#d3ddf0");
-}
-
-function bakeBack() {
-  X = backC.getContext("2d"); setW(X); X.clearRect(-1e3, -1e3, 3e3, 3e3);
-  const Wd = L.Wd, rnd = mulberry32(SEED + 5);
-  X.beginPath(); X.moveTo(-6, 110);
-  for (let x = -6; x <= Wd + 6; x += 1) X.lineTo(x, farY(x));
-  X.lineTo(Wd + 6, 110); X.closePath();
-  const fh = X.createLinearGradient(0, 62, 0, 90); fh.addColorStop(0, "#6d82b0"); fh.addColorStop(1, "#b4c2de");
-  X.fillStyle = fh; X.fill();
-  for (const [fx, sc] of [[0.045, 1], [0.09, 0.68], [0.125, 1.15], [0.3, 1], [0.55, 1.1], [0.585, 0.7]]) {
-    const x = fx * Wd, h = (22 + 8 * rnd()) * sc;
-    spruce(x, farY(x) + 2.2, h, h * 0.3, rnd);
-  }
-  for (let k = 0; k < 12; k++) {
-    const y = 80 + rnd() * 16, x = rnd() * Wd, len = 8 + rnd() * 18;
-    X.beginPath(); X.moveTo(x, y); X.quadraticCurveTo(x + len / 2, y - 1.6 - rnd() * 1.6, x + len, y + 0.2);
-    X.lineWidth = 1; X.strokeStyle = "rgba(244,248,255,0.6)"; X.stroke();
-  }
-  const mp = MAGP;
-  X.beginPath(); X.moveTo(-8, 33); X.quadraticCurveTo(mp.x * 0.45, 37, mp.x + 5, 41.2); X.lineWidth = 2.6; X.strokeStyle = "#33241f"; X.lineCap = "round"; X.stroke();
-  X.beginPath(); X.moveTo(-8, 31.6); X.quadraticCurveTo(mp.x * 0.45, 35.6, mp.x + 5, 39.8); X.lineWidth = 1.0; X.strokeStyle = "rgba(244,248,255,0.96)"; X.stroke();
-  X.beginPath(); X.moveTo(mp.x * 0.5, 36.2); X.quadraticCurveTo(mp.x * 0.58, 31.5, mp.x * 0.74, 29.5); X.lineWidth = 1.1; X.strokeStyle = "#33241f"; X.stroke();
-  X.beginPath(); X.moveTo(mp.x * 0.88, 40.4); X.quadraticCurveTo(mp.x * 0.98, 44.5, mp.x * 1.08, 45.6); X.lineWidth = 0.9; X.strokeStyle = "#33241f"; X.stroke();
-  // the rowan branch with snow on top and clusters of berries
-  const bark = "#33241f";
-  for (let k = 0; k < STEM.length - 1; k++) {
-    ln(STEM[k].x, STEM[k].y, STEM[k + 1].x, STEM[k + 1].y, STEM[k].w, bark);
-    ln(STEM[k].x, STEM[k].y - STEM[k].w * 0.5, STEM[k + 1].x, STEM[k + 1].y - STEM[k + 1].w * 0.5, Math.max(0.35, STEM[k].w * 0.4), "rgba(244,248,255,0.95)");
-  }
-  for (const t of TWIGS) {
-    X.beginPath(); X.moveTo(t.x, t.y); X.quadraticCurveTo(t.cx, t.cy, t.ex, t.ey); X.lineWidth = t.w; X.strokeStyle = bark; X.lineCap = "round"; X.stroke();
-  }
-  for (const b of BERRIES) { ell(b.x, b.y, b.r, b.r, "#c9283a"); ell(b.x - b.r * 0.3, b.y - b.r * 0.35, b.r * 0.35, b.r * 0.3, "#ff8a8a"); }
-  for (const t of TWIGS) ell(t.ex, t.ey - 3.2, 2.2, 0.8, "rgba(244,248,255,0.9)");
-}
-
-function bakeFg() {
-  X = fgC.getContext("2d"); setW(X); X.clearRect(-1e3, -1e3, 3e3, 3e3);
-  const Wd = L.Wd;
-  X.beginPath(); X.moveTo(-6, 110); X.lineTo(-6, 95);
-  for (let x = -6; x <= Wd + 6; x += 2) X.lineTo(x, 94.6 - 1.4 * Math.sin(x * 0.07) - 0.8 * Math.sin(x * 0.23 + 1));
-  X.lineTo(Wd + 6, 110); X.closePath(); X.fillStyle = "#e6eefa"; X.fill();
-}
-
-function bakeAll() {
-  skyC = mk(L.SW, L.SH); backC = mk(L.SW, L.SH); fgC = mk(L.SW, L.SH);
-  bakeSky(); bakeBack(); bakeFg();
-  X = S; setW(X);
-}
-
-function star8(x, y, r, spin) {
-  X.save(); X.translate(x, y);
-  const sx = 0.2 + 0.8 * Math.abs(Math.cos(spin));
-  X.scale(sx, 1);
-  const face = Math.cos(spin) > 0, pts = [];
-  for (let k = 0; k < 16; k++) { const rr = k % 2 ? r * 0.45 : r; const a = (k / 16) * TAU - Math.PI / 2; pts.push(Math.cos(a) * rr, Math.sin(a) * rr); }
-  poly(pts, face ? "#ffd04a" : "#e8483c");
-  ell(0, 0, r * 0.3, r * 0.3, face ? "#c8323c" : "#ffe08a");
-  X.restore();
-}
-
-function tit(b) {
-  X.save(); X.translate(b.x, b.y); X.scale(b.dir * b.s, b.s);
-  const fl = b.flying, pk = b.peck > 0 ? Math.sin(b.peck * Math.PI) : 0, k = Math.sin(b.ph), out = "#070a16";
-  if (!fl) X.rotate(pk * 0.55);
-  const tail = [-1.3, 0.0, -4.3, 0.8 + (fl ? k * 0.5 : 0), -4.2, -0.5, -1.3, -0.6];
-  poly(tail.map((v, i) => v + (i % 2 ? 0 : (v < 0 ? -0.25 : 0.25))), out);
-  ell(0, 0, 2.3, 1.55, out); ell(2.0, -0.7, 1.45, 1.35, out);
-  poly(tail, "#2f58b8");
-  if (fl) { wingFar(b, 0.5, -1.0, 3.0, "#1c3c90"); }
-  ell(0, 0, 2.05, 1.3, "#3f78dc");
-  ell(0.9, 0.55, 1.5, 1.05, "#ffd820");
-    ell(2.0, -0.7, 1.2, 1.1, "#3a7cf0");
-  ell(2.25, -0.2, 0.85, 0.6, "#fafaf5");
-  ln(1.5, -0.5, 3.0, -0.65, 0.3, "#0d1430");
-  ell(2.45, -0.75, 0.2, 0.2, "#fff");
-  poly([3.1, -0.9, 4.0, -0.5, 3.1, -0.25], "#222");
-  if (fl) { wingNear(b, 0.5, -1.0, 3.0, "#2a54c0", null, "#f0f4ff"); }
-  else { ell(-0.5, -0.25, 1.35, 0.65, "#2a54c0"); ln(-1.4, -0.15, 0.4, -0.15, 0.3, "#f4f6fc"); ln(-0.2, 1.1, -0.3, 1.9, 0.35, "#222"); ln(0.6, 1.1, 0.7, 1.9, 0.35, "#222"); }
-  X.restore();
-}
-
-function sparrow(b) {
-  X.save(); X.translate(b.x, b.y); X.scale(b.dir * b.s, b.s);
-  const fl = b.flying, pk = b.peck > 0 ? Math.sin(b.peck * Math.PI) : 0, k = Math.sin(b.ph), out = "#0a0a10";
-  if (!fl) X.rotate(pk * 0.5);
-  const tail = [-1.3, 0.0, -4.0, 0.9 + (fl ? k * 0.5 : 0), -3.9, -0.4, -1.3, -0.6];
-  poly(tail.map((v, i) => v + (i % 2 ? 0 : (v < 0 ? -0.25 : 0.25))), out);
-  ell(0, 0, 2.4, 1.6, out); ell(2.0, -0.6, 1.5, 1.4, out);
-  poly(tail, "#6b4426");
-  if (fl) { wingFar(b, 0.5, -1.05, 3.0, "#6a4424"); }
-  ell(0, 0, 2.15, 1.4, "#a8693a");
-  ell(0.9, 0.6, 1.55, 1.0, "#e4dccc");
-  ln(-1.2, -0.7, 0.8, -0.5, 0.3, "#3a2312"); ln(-1.0, -0.2, 0.9, 0.0, 0.3, "#3a2312");
-  ell(2.0, -0.6, 1.25, 1.15, "#c9c2b4");
-  ell(1.8, -1.35, 1.1, 0.6, "#8a4a22");
-  ell(2.6, 0.05, 0.62, 0.5, "#0d0d12");
-  ell(2.5, -0.45, 0.2, 0.2, "#fff");
-  poly([3.1, -0.9, 4.0, -0.5, 3.1, -0.25], "#3a3430");
-  if (fl) { wingNear(b, 0.5, -1.05, 3.0, "#8a5a32", null, "#e6dcc8"); }
-  else { ell(-0.5, -0.25, 1.4, 0.7, "#8a5a32"); ln(-1.4, -0.15, 0.4, -0.15, 0.3, "#f0e6d0"); ln(-0.2, 1.1, -0.3, 1.9, 0.35, "#3a3430"); ln(0.6, 1.1, 0.7, 1.9, 0.35, "#3a3430"); }
-  X.restore();
-}
-
-function stemAt(f) {
-  f = clamp(f, 0, STEM.length - 1.001);
-  const i = Math.floor(f), t = f - i, a = STEM[i], b = STEM[i + 1];
-  return { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) - lerp(a.w, b.w, t) * 0.5 };
-}
-
-function squirrel(q) {
-  X.save(); X.translate(q.x, q.y); X.scale(q.dir * 3.0, 3.0);
-  const sit = q.state === "sit", k = Math.sin(q.ph), out = "rgba(0,0,0,0)";
-  const fur = "#a9501d", furHi = "#cf6a2c", furDk = "#8f4216", cream = "#f0ddc0", ear = "#7a3210";
-  const plume = (P, r0, r1) => {
-    const bz = (t) => { const u = 1 - t; return [0, 1].map((c) => u * u * u * P[0][c] + 3 * u * u * t * P[1][c] + 3 * u * t * t * P[2][c] + t * t * t * P[3][c]); };
-    for (let pass = 0; pass < 2; pass++) {
-      for (let i = 0; i <= 16; i++) {
-        const t = i / 16, [tx, ty] = bz(t), r = r0 + r1 * Math.pow(Math.sin(Math.PI * clamp(t * 0.94 + 0.03, 0, 1)), 0.8);
-        if (pass === 0) ell(tx, ty, r + 0.4, r + 0.4, out);
-        else ell(tx, ty, r, r, t > 0.72 ? "#dc8d4a" : t > 0.35 ? "#b9591f" : "#a54c1a");
-      }
-    }
-  };
-  const whiskers = (x, y) => { ln(x, y, x + 1.5, y - 0.4, 0.12, "rgba(244,236,220,0.85)"); ln(x, y + 0.1, x + 1.5, y + 0.3, 0.12, "rgba(244,236,220,0.85)"); };
-  if (!sit) {
-    X.rotate(-0.05 + 0.05 * k);
-    plume([[-3.4, -2.9], [-8.6, -3.0], [-9.6, -8.6], [-5.6, -11.0]], 0.6, 0.9);
-    const a1 = Math.sin(q.ph) * 1.2, a2 = Math.sin(q.ph + Math.PI) * 1.2;
-    const l1 = Math.max(0, Math.cos(q.ph)) * 0.8, l2 = Math.max(0, -Math.cos(q.ph)) * 0.8;
-    for (const [a, l, o] of [[a1, l1, 0], [a2, l2, 1.0]]) {
-      ln(-1.9 + o, -2.0, -2.4 + o + a, -0.5 - l, 1.5, out); ln(-1.9 + o, -2.0, -2.4 + o + a, -0.5 - l, 0.95, furDk);
-      ln(-2.5 + o + a, -0.35 - l, -0.6 + o + a, -0.35 - l, 0.85, out);
-    }
-    for (const [a, l] of [[a2, l2], [a1, l1]]) {
-      ln(2.3, -2.2, 3.6 + a * 0.8, -0.6 - l, 1.15, out); ln(2.3, -2.2, 3.6 + a * 0.8, -0.6 - l, 0.7, fur);
-      ln(3.5 + a * 0.8, -0.3 - l, 4.5 + a * 0.8, -0.3 - l, 0.75, out);
-    }
-    ell(0.2, -2.7, 3.75, 1.9, out); ell(-1.9, -2.5, 2.15, 2.15, out); ell(3.9, -3.7, 1.55, 1.35, out);
-    ell(0.2, -2.7, 3.45, 1.6, fur); ell(0.2, -3.3, 2.8, 0.7, furHi); ell(-1.9, -2.5, 1.85, 1.85, furDk);
-    ell(2.5, -2.2, 1.1, 0.95, cream);
-    ell(3.9, -3.7, 1.25, 1.1, fur);
-    poly([3.0, -4.4, 2.75, -7.7, 4.0, -4.9], fur); poly([3.15, -4.6, 2.95, -7.3, 3.8, -4.95], ear);
-    poly([4.0, -4.7, 4.55, -7.8, 5.0, -4.3], fur); poly([4.15, -4.8, 4.5, -7.4, 4.85, -4.5], ear);
-    ln(2.85, -7.7, 2.7, -8.5, 0.3, "#2a1008"); ln(4.55, -7.8, 4.7, -8.6, 0.3, "#2a1008");
-    ell(5.05, -3.4, 0.85, 0.6, cream); ell(5.75, -3.5, 0.3, 0.25, out);
-    ell(4.5, -3.95, 0.5, 0.5, out); ell(4.65, -4.12, 0.16, 0.16, "#fff");
-    whiskers(5.3, -3.5);
-  } else {
-    plume([[-1.6, -2.2], [-7.6, -1.0], [-7.2, -10.6], [-3.0, -12.8]], 0.8, 1.15);
-    ln(-1.0, -0.35, 2.6, -0.35, 1.2, out); ln(-1.0, -0.35, 2.6, -0.35, 0.75, furDk);
-    ell(0.2, -1.8, 2.5, 1.8, out); ell(0.8, -4.4, 2.05, 3.15, out); ell(2.0, -8.0, 1.5, 1.3, out);
-    ell(0.2, -1.8, 2.2, 1.5, furDk); ell(0.8, -4.4, 1.75, 2.85, fur); ell(0.5, -4.8, 1.0, 1.9, furHi);
-    ell(1.6, -4.2, 0.95, 2.2, cream);
-    ell(2.0, -8.0, 1.25, 1.1, fur);
-    poly([1.2, -8.8, 0.7, -12.2, 2.1, -9.2], fur); poly([1.3, -9.0, 0.95, -11.8, 1.95, -9.3], ear);
-    poly([2.4, -9.1, 3.1, -12.3, 3.4, -8.8], fur); poly([2.55, -9.2, 3.05, -11.9, 3.25, -9.0], ear);
-    ln(0.8, -12.2, 0.65, -13.0, 0.3, "#2a1008"); ln(3.1, -12.3, 3.3, -13.1, 0.3, "#2a1008");
-    ell(3.1, -7.7, 0.85, 0.6, cream); ell(3.8, -7.8, 0.3, 0.25, out);
-    ell(2.65, -8.3, 0.5, 0.5, out); ell(2.8, -8.46, 0.16, 0.16, "#fff");
-    ln(1.4, -6.0, 2.9, -6.9, 1.2, out); ln(1.4, -6.0, 2.9, -6.9, 0.75, fur);
-    ell(3.1, -6.8, 0.8, 0.65, out); ell(3.2, -6.7, 0.55, 0.45, "#8a5526"); ell(3.1, -6.85, 0.2, 0.15, "#c89a60");
-    whiskers(3.6, -7.7);
-  }
-  X.restore();
-}
-
-function magpie(m) {
-  X.save(); X.translate(m.x, m.y); X.scale(m.dir * m.s, m.s);
-  const fl = m.flying, k = Math.sin(m.ph), out = "#05060c";
-  const tilt = fl ? 0 : 0.12 * Math.sin(m.ph * 0.9);
-  X.rotate(tilt);
-  const tail = [-2.0, -0.3, -9.4, 0.9 + (fl ? k * 0.6 : 0.3 * Math.sin(m.ph * 1.3)), -9.4, 1.9, -2.0, 0.9];
-  poly(tail.map((v, i) => v + (i % 2 ? (v > 0.5 ? 0.3 : -0.3) : (v < -3 ? -0.3 : 0))), out);
-  poly(tail, "#101a3c");
-  if (fl) wingFar(m, 0.7, -1.3, 5.0, "#05060c");
-  poly([-5.2, 0.35 + (fl ? k * 0.3 : 0), -9.2, 0.95 + (fl ? k * 0.55 : 0.2), -9.2, 1.6, -5.2, 0.85], "#1d3a82");
-  ell(0, 0, 2.8, 1.75, out); ell(2.9, -1.0, 1.5, 1.4, out);
-  ell(0, 0, 2.5, 1.45, "#0b0d16");
-  ell(0.7, 0.75, 1.9, 0.95, "#f4f4f2");
-  ell(-0.2, -0.95, 1.4, 0.7, "#f4f4f2");
-  ell(-1.4, -0.2, 1.7, 0.85, "#1d3a82");
-  ell(2.9, -1.0, 1.28, 1.2, "#0b0d16");
-  poly([3.9, -1.35, 5.2, -0.95, 3.9, -0.5], "#0b0d16");
-  ell(3.3, -1.3, 0.26, 0.26, "#fff");
-  if (fl) { wingNear(m, 0.7, -1.35, 5.0, "#0b0d16", "#f4f4f2", "#1d3a82"); }
-  else { ln(0.0, 1.2, -0.1, 2.1, 0.4, "#111"); ln(0.9, 1.2, 1.0, 2.1, 0.4, "#111"); }
-  X.restore();
-}
-
-function wing(x, y, ang, L, col, patch, sheen) {
-  X.save(); X.translate(x, y); X.rotate(ang);
-  X.beginPath(); X.moveTo(0.35, 0.1); X.quadraticCurveTo(-L * 0.5, -L * 0.18, -L * 0.42, -L); X.quadraticCurveTo(-L * 0.12, -L * 0.7, 0.05, -0.05); X.closePath();
-  X.fillStyle = col; X.fill();
-  if (sheen) ell(-L * 0.2, -L * 0.55, L * 0.15, L * 0.34, sheen, -0.15);
-  if (patch) ell(-L * 0.3, -L * 0.8, L * 0.12, L * 0.2, patch, -0.2);
-  X.restore();
-}
-
-function wingFar(b, sx, sy, L, col) {
-  const f = Math.sin(b.ph - 0.6);
-  wing(sx - 0.2, sy + 0.1, -1.45 + 1.05 * f, L + 0.5 * Math.abs(Math.cos(b.ph - 0.6)), col, null);
-}
-function wingNear(b, sx, sy, L, col, patch, sheen) {
-  const k = Math.sin(b.ph);
-  wing(sx, sy, -1.45 + 1.05 * k, L + 0.7 * Math.abs(Math.cos(b.ph)), col, patch, sheen);
-}
-
-function bird(b) {
-  if (b.kind === "tit") { tit(b); return; }
-  if (b.kind === "sparrow") { sparrow(b); return; }
-  X.save(); X.translate(b.x, b.y); X.scale(b.dir * b.s, b.s);
-  const fl = b.flying, pk = b.peck > 0 ? Math.sin(b.peck * Math.PI) : 0;
-  if (!fl) X.rotate(pk * 0.45);
-  const k = Math.sin(b.ph);
-  poly([-1.5, 0.1, -4.2, 0.9 + (fl ? k * 0.6 : 0), -4.1, -0.4, -1.5, -0.6], "#15151c");
-  if (fl) { wingFar(b, 0.5, -1.0, 3.4, "#2a2f40"); }
-  ell(0, 0, 2.1, 1.35, "#aab2c8");
-  ell(0.9, 0.55, 1.45, 1.1, "#f0506a");
-  ell(2.1, -0.6, 1.05, 1.0, "#14141a");
-  poly([3.0, -0.8, 3.9, -0.45, 3.0, -0.2], "#2a2a2a");
-  ell(2.3, -0.8, 0.18, 0.18, "#fff");
-  if (fl) { wingNear(b, 0.5, -1.0, 3.4, "#454b60", null, "#eef0f6"); }
-  else { ell(-0.6, -0.2, 1.4, 0.65, "#4a5068"); ln(-1.6, -0.1, 0.4, -0.1, 0.25, "#e8ecf4"); }
-  if (!fl) { ln(-0.2, 1.1, -0.3, 1.9, 0.3, "#2a2a2a"); ln(0.5, 1.1, 0.6, 1.9, 0.3, "#2a2a2a"); }
-  X.restore();
-}
-
-const puff = (x, y, n, spread, up = 2) => { for (let k = 0; k < n; k++) puffs.push({ x: x + (Math.random() - 0.5) * 2, y, vx: (Math.random() - 0.5) * spread, vy: -Math.random() * up, r: 0.5 + Math.random() * 0.8, life: 1 }); };
-const spark = (x, y) => notes.push({ x, y, vx: -2 - Math.random() * 3, vy: 1 + Math.random() * 2.4, ch: [46, 42, 43, 39][(Math.random() * 4) | 0], rgb: "255,214,120", life: 1, d: 0.9 });
 
 // ---------- simulation ----------
 function update(dt) {
@@ -609,291 +779,199 @@ function update(dt) {
     if (f.y > 102) { f.y = -2; f.x = Math.random() * (Wd + 10) - 5; }
     if (f.x > Wd + 6) f.x = -5;
   }
-  const flee = (b) => {
-    if (b.perch) b.perch.taken = null;
-    b.state = "leave"; b.t = 0; b.flying = true; b.scared = true; b.from = { x: b.x, y: b.y }; b.to = { x: -10 - Math.random() * 20, y: -8 - Math.random() * 12 }; b.dur = 2.6; b.dir = -1;
-    puff(b.x, b.y + 2, 8, 8, 3);
-  };
-  if (SQ.state === "idle") { SQ.wait -= dt; if (SQ.wait <= 0) { SQ.state = "in"; SQ.idx = 0; SQ.target = 17 + Math.random() * 8; SQ.dir = -1; } }
-  else {
-    const seg = (Wd * 0.6 + 8) / 30;
-    SQ.ph += dt * (SQ.state === "sit" ? 3 : 15);
-    if (SQ.state === "in") { SQ.idx += (dt * 24) / seg; if (SQ.idx >= SQ.target) { SQ.state = "sit"; SQ.t = 0; } }
-    else if (SQ.state === "sit") { SQ.t += dt; if (SQ.t > 3) { SQ.state = "out"; SQ.dir = 1; } }
-    else { SQ.idx -= (dt * 34) / seg; if (SQ.idx <= 0) { SQ.state = "idle"; SQ.wait = SQ_GAP[0] + Math.random() * (SQ_GAP[1] - SQ_GAP[0]); for (const b of birds) if (b.state === "wait") { b.t = 0; b.wait = 10 + Math.random() * 14; } } }
-    const sp = stemAt(SQ.idx);
-    SQ.x = sp.x; SQ.y = sp.y - (SQ.state === "sit" ? 0 : Math.abs(Math.sin(SQ.ph)) * 1.2);
-    if (SQ.state !== "sit" && Math.random() < dt * 8) puff(SQ.x, sp.y, 2, 5, 2);
-    for (const b of birds) {
-      if (b.state === "sit" && Math.abs(b.x - SQ.x) < 17) flee(b);
-      else if (b.state === "fly" && b.perch && Math.abs(b.perch.x - SQ.x) < 24) flee(b);
-    }
-  }
-  {
-    const m = MAG;
-    m.t += dt;
-    if (m.state === "idle") {
-      m.wait -= dt;
-      if (m.wait <= 0) { m.state = "fly"; m.t = 0; m.from = { x: -18, y: 10 + Math.random() * 14 }; m.dur = 3.4; m.dir = 1; m.flying = true; m.x = m.from.x; m.y = m.from.y; }
-    } else if (m.state === "fly") {
-      m.ph += dt * 13;
-      const u = clamp(m.t / m.dur, 0, 1), e = 1 - Math.pow(1 - u, 2.2);
-      m.x = lerp(m.from.x, MAGP.x, e); m.y = lerp(m.from.y, MAGP.y - 1.9 * m.s, e) - Math.sin(u * Math.PI) * 5;
-      if (u >= 1) { m.state = "sit"; m.t = 0; m.flying = false; m.stay = 6 + Math.random() * 5; puff(MAGP.x, MAGP.y - 1, 8, 7, 3); }
-    } else if (m.state === "sit") {
-      m.ph += dt * 2.5;
-      if (Math.random() < dt * 0.35) m.dir = -m.dir;
-      if (m.t > m.stay) { m.state = "leave"; m.t = 0; m.flying = true; m.from = { x: m.x, y: m.y }; m.dur = 3.6; m.dir = -1; puff(MAGP.x, MAGP.y - 1, 8, 7, 3); }
-    } else {
-      m.ph += dt * 13;
-      const u = clamp(m.t / m.dur, 0, 1), e = u * u;
-      m.x = lerp(m.from.x, -24, e); m.y = lerp(m.from.y, -12, e) - Math.sin(u * Math.PI) * 4;
-      if (u >= 1) { m.state = "idle"; m.wait = MAG_GAP[0] + Math.random() * (MAG_GAP[1] - MAG_GAP[0]); }
-    }
-  }
-  const free = () => { const f = PERCHES.filter((p) => !p.taken); return f.length ? f[(Math.random() * f.length) | 0] : null; };
-  for (const b of birds) {
-    b.t += dt;
-    if (b.state === "wait") {
-      b.ph += dt * 3;
-      if (b.t > b.wait && SQ.state === "idle") {
-        const p = free();
-        if (p) { p.taken = b; b.perch = p; b.from = { x: b.x, y: b.y }; b.state = "fly"; b.t = 0; b.dur = Math.max(1.6, Math.hypot(p.x - b.x, p.y - b.y) / 30); b.flying = true; b.dir = p.x < b.x ? -1 : 1; }
-        else b.t = 0;
-      }
-    } else if (b.state === "fly") {
-      b.ph += dt * 16;
-      const u = clamp(b.t / b.dur, 0, 1), e = 1 - Math.pow(1 - u, 2.2), p = b.perch;
-      b.x = lerp(b.from.x, p.x, e); b.y = lerp(b.from.y, p.y - 1.5 * b.s, e) - Math.sin(u * Math.PI) * 6;
-      if (u >= 1) { b.state = "sit"; b.t = 0; b.flying = false; b.stay = QS.has("zoo") ? 60 : b.kind === "tit" ? 2.5 + Math.random() * 4 : b.kind === "sparrow" ? 3 + Math.random() * 5 : 4 + Math.random() * 9; b.peck = 0; puff(p.x, p.y - 1, 7, 6, 3); }
-    } else if (b.state === "sit") {
-      b.ph += dt * 2;
-      if (!b.peck && Math.random() < dt * (b.kind ? 1.2 : 0.6)) b.peck = 0.0001;
-      if (b.peck) { b.peck += dt * 2.4; if (b.peck > 1) b.peck = 0; }
-      if (Math.random() < dt * 0.15) b.dir = -b.dir;
-      if (b.t > b.stay) { b.perch.taken = null; b.state = "leave"; b.t = 0; b.flying = true; b.from = { x: b.x, y: b.y }; b.to = { x: -10 - Math.random() * 20, y: -6 - Math.random() * 14 }; b.dur = 4.4; b.dir = -1; puff(b.perch.x, b.perch.y - 1, 8, 7, 3); }
-    } else {
-      b.ph += dt * 16;
-      const u = clamp(b.t / b.dur, 0, 1), e = u * u;
-      b.x = lerp(b.from.x, b.to.x, e); b.y = lerp(b.from.y, b.to.y, e) - Math.sin(u * Math.PI) * 5;
-      if (u >= 1) { b.state = "wait"; b.t = 0; b.wait = b.kind === "tit" ? 15 + Math.random() * 25 : b.kind === "sparrow" ? 8 + Math.random() * 14 : 1 + Math.random() * 6;
-      if (b.scared) { b.wait = Math.max(b.wait, 10 + Math.random() * 14); b.scared = false; } b.x = Wd + 12; b.y = 6 + Math.random() * 34; b.dir = -1; }
-    }
-  }
-  for (const p of puffs) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 4 * dt; p.life -= dt * 1.4; }
-  puffs = puffs.filter((p) => p.life > 0);
-  for (const p of notes) { p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt * (p.d || 0.55); }
-  notes = notes.filter((p) => p.life > 0);
-}
-
-// ---------- drawing the scene into the raster ----------
-function blit(c) { S.save(); S.setTransform(1, 0, 0, 1, 0, 0); S.drawImage(c, 0, 0); S.restore(); }
-
-function drawStars() {
-  const Wd = L.Wd, lst = (LST0 + time * LST_RATE) * (Math.PI / 12);
-  const sinφ = Math.sin(LAT), cosφ = Math.cos(LAT), sE = Math.sin(EL0), cE = Math.cos(EL0);
-  const k = (Wd / 2) / Math.tan(HFOV / 4);
-  const mx = MOON.x * Wd;
-  for (const st of STARS) {
-    const H = lst - st.ra, cH = Math.cos(H), sH = Math.sin(H);
-    const e = -st.cd * sH, n = cosφ * st.sd - sinφ * st.cd * cH, u = sinφ * st.sd + cosφ * st.cd * cH;
-    if (u < -0.02) continue;
-    const d = cE * n + sE * u, yy = -sE * n + cE * u;
-    if (d < -0.6) continue;
-    const x = Wd / 2 + (e / (1 + d)) * k, y = SKY_CY - (yy / (1 + d)) * k;
-    if (x < -2 || x > Wd + 2 || y < -2 || y > 86) continue;
-    if (Math.hypot(x - mx, y - MOON.y) < MOON.r * 1.5) continue;
-    const tw = 0.88 + 0.12 * Math.sin(time * (1.5 + (st.k % 5) * 0.4) + st.ph);
-    const rr = clamp(0.8 + 0.34 * (4.1 - st.mag), 0.8, 2.2), a = clamp(0.96 + 0.1 * (3.5 - st.mag), 0.96, 1) * (0.94 + 0.06 * tw);
-    const col = `rgba(${st.rgb},${a})`;
-    if (st.mag < 2.4) { const L2 = rr * 2.9; ln(x - L2, y, x + L2, y, 0.35, col); ln(x, y - L2, x, y + L2, 0.35, col); }
-    X.beginPath(); X.arc(x, y, rr, 0, TAU); X.fillStyle = col; X.fill();
-  }
+  updateBranch(ROWAN, dt); updateBranch(SNAG, dt);
+  for (const b of BIRDS) updateBird(b, dt);
+  updateBird(MAG, dt);
+  for (const p of dust) { p.vy += 9 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt * 0.9; }
+  if (dust.length) dust = dust.filter((p) => p.life > 0);
 }
 
 function drawScene() {
-  X = S; S.setTransform(1, 0, 0, 1, 0, 0); S.fillStyle = "#000"; S.fillRect(0, 0, L.SW, L.SH); setW(S);
-  blit(skyC);
-  drawStars();
-  blit(backC);
-  for (const b of birds) if (b.x > -12 && b.x < L.Wd + 14) bird(b);
-  if (MAG.state !== "idle") magpie(MAG);
-  if (SQ.state !== "idle") squirrel(SQ);
-  for (const p of puffs) { X.beginPath(); X.arc(p.x, p.y, p.r, 0, TAU); X.fillStyle = `rgba(236,242,252,${Math.min(1, p.life).toFixed(3)})`; X.fill(); }
-  blit(fgC);
-  setW(S);
+  const { SW, SH } = L;
+  for (const [c, st] of [[S, staticS], [Dc, staticD]]) { c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, SW, SH); c.drawImage(st, 0, 0); }
+  X = S; D = Dc; setW(X); setW(D);
+  drawBranch(SNAG);
+  if (MAG.mode !== "away") drawBird(MAG);
+  drawBranch(ROWAN);
+  for (const b of BIRDS) if (b.mode === "sit") drawBird(b);
+  for (const b of BIRDS) if (b.mode === "fly") drawBird(b);
 }
 
-// ---------- turning the raster into characters ----------
-function render() {
-  const { cols, rows, cw, ch, dpr, SW, n } = L;
-  drawScene();
-  const id = S.getImageData(0, 0, SW, L.SH).data;
-  const fd = fillImg.data;
-  G.fill(0);
-  const fl = 0.85 + 0.15 * Math.sin(time * 13) * Math.sin(time * 7.3) + 0.05 * Math.sin(time * 31);
-  const fT = time + 14;
-
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      const i = r * cols + c, o = i * 4, k = kind[i];
-      if (k !== 3) {
-        const a = amb[i], cg = candleG[i] * fl;
-        const m = 0.7 + 0.9 * a;
-        fd[o] = baseFill[i * 3] * m + 70 * cg * 0.55; fd[o + 1] = baseFill[i * 3 + 1] * m + 40 * cg * 0.55; fd[o + 2] = baseFill[i * 3 + 2] * m + 16 * cg * 0.55; fd[o + 3] = 255;
-        const g = baseG[i];
-        if (g) {
-          const bc = baseC[i], mm = m + cg * 0.5;
-          G[i] = g; C[i] = pack(((bc >>> 16) & 255) * mm + 40 * cg, ((bc >>> 8) & 255) * mm + 22 * cg, (bc & 255) * mm);
-        }
-        continue;
-      }
-      // glass: read the 2x3 samples that belong to this cell
-      const px = c * 2, py = r * 3;
-      let sr = 0, sg = 0, sb = 0, c0 = 0, c1 = 0, r0 = 0, r2 = 0;
-      for (let j = 0; j < 3; j++) {
-        for (let q = 0; q < 2; q++) {
-          const p = ((py + j) * SW + px + q) * 4;
-          const lum = (0.3 * id[p] + 0.59 * id[p + 1] + 0.11 * id[p + 2]) / 255;
-          sr += id[p]; sg += id[p + 1]; sb += id[p + 2];
-          if (q) c1 += lum; else c0 += lum;
-          if (j === 0) r0 += lum; else if (j === 2) r2 += lum;
-        }
-      }
-      let R = sr / 6, Gg = sg / 6, B = sb / 6;
-      const cg = candleG[i] * fl * 0.45;
-      R += 130 * cg; Gg += 78 * cg; B += 30 * cg;
-      const lum = (c0 + c1) / 6;
-      const gx = (c1 - c0) / 3, gy = (r2 - r0) / 2, mag = Math.hypot(gx, gy);
-      let glyph = 0;
-      if (mag > 0.2) glyph = dirGlyph(Math.atan2(gy, gx) + Math.PI / 2);
-      else if (lum > 0.05) {
-        const jit = cellJ[i];
-        const di = lum > 0.5 ? Math.floor(((1 - lum) / 0.5) * 4.2) + 1 : Math.floor(Math.pow(lum / 0.5, 0.8) * 6.5) + 1;
-        glyph = RAMP.charCodeAt(clamp(di + jit, 0, RAMP.length - 1));
-      }
-      const mx = Math.max(R, Gg, B, 1), boost = clamp(150 / mx, 1, 3.2);
-      let fr = R * 0.4 + 5, fg = Gg * 0.4 + 8, fb = B * 0.44 + 14;
-      let gr = clamp(R * boost * 0.95 + 24, 0, 255), gg2 = clamp(Gg * boost * 0.95 + 24, 0, 255), gb = clamp(B * boost * 0.95 + 30, 0, 255);
-
-      // frost
-      const eff = 1 - clr[i];
-      let frostHide = 0;
-      if (eff > 0.01) {
-        const hasF = frostB[i] <= fT;
-        const grown = smooth(clamp(fT / 26, 0, 1));
-        const mi = Math.max(mist[i] * smooth(clamp((fT - mistB[i]) / 6, 0, 1)), 0);
-        if (hasF && eff > 0.45) {
-          const tw = 0.8 + 0.2 * Math.sin(time * 3 + cellP[i]);
-          const t = 0.5 * eff;
-          fr = lerp(fr, 52, t); fg = lerp(fg, 82, t); fb = lerp(fb, 116, t);
-          glyph = frostG[i]; const ek = smooth(clamp((eff - 0.45) / 0.4, 0, 1)); gr = lerp(gr, 224 * tw, ek); gg2 = lerp(gg2, 244 * tw, ek); gb = lerp(gb, 255 * tw, ek);
-          frostHide = eff;
-        } else if (mi > 0.04) {
-          const t = 0.55 * mi * eff;
-          fr = lerp(fr, 40, t); fg = lerp(fg, 64, t); fb = lerp(fb, 96, t);
-          const hz = mi * eff;
-          if (hz > 0.22 && cellH6[i] < hz * 0.95) { glyph = cellH7[i] < 0.55 ? 46 : cellH7[i] < 0.8 ? 58 : 39; gr = 186; gg2 = 214; gb = 240; }
-          else if (glyph) { const q = Math.min(1, hz * 1.1); gr = lerp(gr, 190, q); gg2 = lerp(gg2, 216, q); gb = lerp(gb, 240, q); }
-          frostHide = hz;
-        }
-      }
-      fd[o] = fr; fd[o + 1] = fg; fd[o + 2] = fb; fd[o + 3] = 255;
-      if (glyph) { G[i] = glyph; C[i] = pack(gr, gg2, gb); }
+// ---------- from picture to characters ----------
+// A cell only partly covered by something gets a bare character that follows the outline.
+function rimGlyph(sd, px, py, cov) {
+  const { SW, SH } = L;
+  let m = 0, mx = 0, my = 0, xx = 0, yy = 0, xy = 0;
+  for (let j = -1; j <= 4; j++) {
+    const y = py + j;
+    if (y < 0 || y >= SH) continue;
+    for (let q = -2; q <= 3; q++) {
+      const x = px + q;
+      if (x < 0 || x >= SW) continue;
+      const a = sd[(y * SW + x) * 4 + 3];
+      if (!a) continue;
+      m += a; mx += a * q; my += a * j; xx += a * q * q; yy += a * j * j; xy += a * q * j;
     }
   }
+  if (!m) return 46;
+  mx /= m; my /= m; xx = xx / m - mx * mx; yy = yy / m - my * my; xy = xy / m - mx * my;
+  if (Math.hypot(xx - yy, 2 * xy) / (xx + yy + 1e-6) > 0.22) return dirGlyph(0.5 * Math.atan2(2 * xy, xx - yy));
+  return my < 1.0 ? 39 : my > 2.0 ? 46 : cov < 0.3 ? 58 : 42;
+}
 
-  // snow falling outside the glass
-  for (const f of FLAKES) {
-    const c = Math.floor((L.GX0 + f.x * L.u) / 2), r = Math.floor((L.GY0 + f.y * L.u) / 3);
+function render() {
+  const { cols, rows, SW, SH, u, GX0, GY0 } = L;
+  drawScene();
+  const sd = S.getImageData(0, 0, SW, SH).data, dd = Dc.getImageData(0, 0, SW, SH).data;
+  placeStars();
+  const fT = time + 14;
+
+  for (let q = 0; q < glassIdx.length; q++) {
+    const i = glassIdx[q], c = i % cols, r = (i / cols) | 0, o = i * 3;
+    let fr = BG3[o], fg = BG3[o + 1], fb = BG3[o + 2], glyph = 0, gr = 0, gg = 0, gb = 0;
+    if (bgKind[i] === 3) {
+      glyph = bgG[i];
+      if (glyph) { const bc = bgC[i]; gr = bc >>> 16; gg = (bc >>> 8) & 255; gb = bc & 255; }
+    } else {
+      // how much of this cell do the things outside cover, and in what colour?
+      const p0 = (r * 3 * SW + c * 2) * 4;
+      let sa = 0, sr = 0, sg = 0, sb = 0;
+      for (let j = 0; j < 3; j++) {
+        for (let k = 0; k < 2; k++) {
+          const p = p0 + (j * SW + k) * 4, a = sd[p + 3];
+          if (a) { sa += a; sr += sd[p] * a; sg += sd[p + 1] * a; sb += sd[p + 2] * a; }
+        }
+      }
+      if (sa > 150) {
+        const cov = sa / 1530, R = sr / sa, Gc = sg / sa, B = sb / sa, lum = (0.3 * R + 0.59 * Gc + 0.11 * B) / 255;
+        let da = 0, d1 = 0, d2 = 0;
+        for (let j = 0; j < 3; j++) {
+          for (let k = 0; k < 2; k++) {
+            const p = p0 + (j * SW + k) * 4, a = dd[p + 3];
+            if (a) { da += a; d1 += (dd[p] - 128) * a; d2 += (dd[p + 1] - 128) * a; }
+          }
+        }
+        const tagged = da > sa * 0.5 && (d1 !== 0 || d2 !== 0);
+        if (cov >= 0.55) {
+          // solid: a coloured block with a character printed on it
+          const k = Math.min(1, cov * 1.08);
+          fr = lerp(fr, R, k); fg = lerp(fg, Gc, k); fb = lerp(fb, B, k);
+          if (R > 165 && Gc < 100 && B < 70) { glyph = cellH6[i] < 0.7 ? 111 : 64; gr = R * 0.42; gg = Gc * 0.3; gb = B * 0.3; }          // rowan berries
+          else if (tagged) {
+            glyph = dirGlyph(0.5 * Math.atan2(d2, d1));
+            if (lum > 0.4) { gr = R * 0.55; gg = Gc * 0.55; gb = B * 0.6; } else { gr = R * 1.5 + 40; gg = Gc * 1.5 + 40; gb = B * 1.5 + 46; }
+          } else {
+            glyph = RAMP.charCodeAt(clamp(Math.floor((1 - lum) * RAMP.length) + cellJ[i], 0, RAMP.length - 1));
+            if (lum > 0.22) { gr = R * 0.45; gg = Gc * 0.45; gb = B * 0.5; } else { gr = R * 1.7 + 34; gg = Gc * 1.7 + 34; gb = B * 1.7 + 40; }
+          }
+        } else {
+          const k = cov * 0.4;
+          fr = lerp(fr, R, k); fg = lerp(fg, Gc, k); fb = lerp(fb, B, k);
+          glyph = tagged ? dirGlyph(0.5 * Math.atan2(d2, d1)) : rimGlyph(sd, c * 2, r * 3, cov);
+          if (lum < 0.3) { gr = R * 1.4 + 52; gg = Gc * 1.4 + 52; gb = B * 1.4 + 60; } else { gr = R; gg = Gc; gb = B; }
+        }
+      } else if (starG[i]) {
+        const sc = starC[i];
+        glyph = starG[i]; gr = sc >>> 16; gg = (sc >>> 8) & 255; gb = sc & 255;
+        const hl = glyph === 42 ? 0.22 : glyph === 43 ? 0.13 : 0.07;
+        fr += gr * hl; fg += gg * hl; fb += gb * hl;
+      } else if (spk[i] && Math.sin(time * 0.8 + spk[i]) > 0.55) { glyph = spk[i] % 2 < 1 ? 46 : 42; gr = 228; gg = 238; gb = 252; }
+    }
+
+    // frost on the glass
+    const eff = 1 - clr[i];
+    let hide = 0;
+    if (eff > 0.01) {
+      const mi = mist[i] * smooth(clamp((fT - mistB[i]) / 6, 0, 1));
+      if (frostB[i] <= fT && eff > 0.45) {
+        const tw = 0.8 + 0.2 * Math.sin(time * 3 + cellP[i]), t = 0.5 * eff, ek = smooth(clamp((eff - 0.45) / 0.4, 0, 1));
+        fr = lerp(fr, 56, t); fg = lerp(fg, 86, t); fb = lerp(fb, 124, t);
+        glyph = frostG[i]; gr = lerp(gr, 226 * tw, ek); gg = lerp(gg, 244 * tw, ek); gb = lerp(gb, 255 * tw, ek);
+        hide = eff;
+      } else if (mi > 0.04) {
+        const hz = mi * eff, t = 0.55 * hz;
+        fr = lerp(fr, 52, t); fg = lerp(fg, 78, t); fb = lerp(fb, 114, t);
+        if (hz > 0.22 && cellH6[i] < hz * 0.95) { glyph = cellH7[i] < 0.55 ? 46 : cellH7[i] < 0.8 ? 58 : 39; gr = 190; gg = 216; gb = 242; }
+        else if (glyph) { const k = Math.min(1, hz * 1.1); gr = lerp(gr, 190, k); gg = lerp(gg, 216, k); gb = lerp(gb, 240, k); }
+        hide = hz;
+      }
+    }
+    hid[i] = hide > 0.5 ? 1 : 0;
+    F3[o] = fr; F3[o + 1] = fg; F3[o + 2] = fb; G[i] = glyph;
+    if (glyph) C[i] = pack(gr, gg, gb);
+  }
+
+  // eyes are stamped as a single bead, so they read against the head
+  for (const b of BIRDS.concat(MAG)) {
+    if (b.mode === "away" || !b.eye) continue;
+    const c = Math.floor(b.eye[0] / 2), r = Math.floor(b.eye[1] / 3);
     if (c < 0 || r < 0 || c >= cols || r >= rows) continue;
     const i = r * cols + c;
-    if (kind[i] !== 3) continue;
-    const eff = 1 - clr[i];
-    if (eff > 0.01 && (frostB[i] <= fT || mist[i] * eff > 0.5)) continue;
-    const o = i * 4, lum = (fd[o] * 0.3 + fd[o + 1] * 0.59 + fd[o + 2] * 0.11) / 255;
-    G[i] = f.z > 0.82 ? 42 : f.z > 0.6 ? 43 : f.z > 0.4 ? 58 : 46;
-    const v = 0.55 + 0.45 * f.z;
-    C[i] = pack(236 * v, 244 * v, 255 * v);
+    if (kind[i] !== 3 || hid[i] || bgKind[i] === 3) continue;
+    G[i] = 0x25cf; C[i] = pack(b.sp.eye[0], b.sp.eye[1], b.sp.eye[2]);
   }
-  // musical notes and laughter rise from the street
-  for (const p of notes) {
-    const c = Math.floor((L.GX0 + p.x * L.u) / 2), r = Math.floor((L.GY0 + p.y * L.u) / 3);
-    if (c < 0 || r < 0 || c >= cols || r >= rows || kind[r * cols + c] !== 3) continue;
+  // falling snow, and the snow shaken off a branch
+  const speck = (x, y, g, R, Gc, B, a) => {
+    const c = Math.floor((GX0 + x * u) / 2), r = Math.floor((GY0 + y * u) / 3);
+    if (c < 0 || r < 0 || c >= cols || r >= rows) return;
     const i = r * cols + c;
-    G[i] = p.ch; const a = Math.min(1, p.life * 1.8);
-    const [pr, pg, pb] = p.rgb.split(",").map(Number);
-    const o = i * 4;
-    C[i] = pack(lerp(fd[o], pr, a), lerp(fd[o + 1], pg, a), lerp(fd[o + 2], pb, a));
-  }
+    if (kind[i] !== 3 || hid[i] || bgKind[i] === 3) return;
+    const o = i * 3, dark = F3[o] * 0.3 + F3[o + 1] * 0.59 + F3[o + 2] * 0.11 > 150 ? 0.55 : 1;
+    G[i] = g; C[i] = pack(lerp(F3[o], R * dark, a), lerp(F3[o + 1], Gc * dark, a), lerp(F3[o + 2], B * dark, a));
+  };
+  for (const f of FLAKES) speck(f.x, f.y, f.z > 0.82 ? 42 : f.z > 0.6 ? 43 : f.z > 0.4 ? 58 : 46, 236, 244, 255, 0.55 + 0.45 * f.z);
+  for (const p of dust) speck(p.x, p.y, p.ch, 240, 246, 255, Math.min(1, p.life * 1.6));
 
-  // candle and geranium stand in front of the glass
-  for (const f of fgCells) {
-    const o = f.i * 4, glassUnder = kind[f.i] === 3;
-    const base = glassUnder ? [fd[o], fd[o + 1], fd[o + 2]] : [fd[o], fd[o + 1], fd[o + 2]];
-    const mixF = 1;
-    fd[o] = lerp(base[0], f.f[0], mixF); fd[o + 1] = lerp(base[1], f.f[1], mixF); fd[o + 2] = lerp(base[2], f.f[2], mixF);
-    G[f.i] = f.g; C[f.i] = f.col;
-  }
   compose();
 }
 
+// ---------- pixels: only the cells that changed are repainted ----------
 const MASK = new Map();
-let outImg, OUT32;
 function mask(g) {
   let m = MASK.get(g);
   if (m) return m;
-  const { cw, ch } = L;
-  const x = mk(cw, ch).getContext("2d", { willReadFrequently: true });
-  x.font = `600 ${Math.round(ch * 0.78)}px ${L.font}`;
+  const { cwD, chD } = L;
+  const x = mk(cwD, chD).getContext("2d", { willReadFrequently: true });
+  x.font = `600 ${Math.round(chD * 0.78)}px ${L.font}`;
   x.textAlign = "center"; x.textBaseline = "middle"; x.fillStyle = "#fff";
-  x.fillText(chr(g), cw / 2, ch / 2 + ch * 0.06);
-  const d = x.getImageData(0, 0, cw, ch).data;
-  m = new Uint8Array(cw * ch);
+  x.fillText(chr(g), cwD / 2, chD / 2 + chD * 0.06);
+  const d = x.getImageData(0, 0, cwD, chD).data;
+  m = new Uint8Array(cwD * chD);
   for (let k = 0; k < m.length; k++) m[k] = d[k * 4 + 3];
   MASK.set(g, m);
   return m;
 }
 
 function compose() {
-  const { cols, rows, cw, ch } = L, W = cols * cw, fd = fillImg.data;
+  const { cols, rows, cwD, chD } = L, W = cols * cwD;
   for (let r = 0; r < rows; r++) {
+    let x0 = cols, x1 = -1;
     for (let c = 0; c < cols; c++) {
-      const i = r * cols + c, o = i * 4, fr = fd[o], fg = fd[o + 1], fb = fd[o + 2];
+      const i = r * cols + c, o = i * 3, fr = F3[o], fg = F3[o + 1], fb = F3[o + 2];
+      const f = (fr << 16) | (fg << 8) | fb, g = G[i] === 32 ? 0 : G[i], col = g ? C[i] & 0xf8f8f8 : 0;
+      if (f === PF[i] && g === PG[i] && col === PC[i]) continue;
+      PF[i] = f; PG[i] = g; PC[i] = col;
+      if (c < x0) x0 = c;
+      x1 = c;
       const bg = (0xff000000 | (fb << 16) | (fg << 8) | fr) >>> 0;
-      const gl = (0xff000000 | (((fb + (255 - fb) * 0.05) | 0) << 16) | (((fg + (255 - fg) * 0.05) | 0) << 8) | ((fr + (255 - fr) * 0.05) | 0)) >>> 0;
-      const x0 = c * cw, g = G[i], m = g && g !== 32 ? mask(g) : null;
-      if (!m) {
-        for (let y = 0; y < ch; y++) {
-          const p = (r * ch + y) * W + x0;
-          if (y === 0) { for (let x = 0; x < cw; x++) OUT32[p + x] = gl; }
-          else { OUT32[p] = gl; for (let x = 1; x < cw; x++) OUT32[p + x] = bg; }
-        }
-      } else {
-        const col = C[i], tr = (col >>> 16) & 255, tg = (col >>> 8) & 255, tb = col & 255;
-        let k = 0;
-        for (let y = 0; y < ch; y++) {
-          const p = (r * ch + y) * W + x0;
-          for (let x = 0; x < cw; x++) {
-            const a = m[k++], base = y === 0 || x === 0 ? gl : bg;
-            if (a === 0) { OUT32[p + x] = base; continue; }
-            const br = base & 255, bgc = (base >>> 8) & 255, bb = (base >>> 16) & 255, t = a / 255;
-            OUT32[p + x] = (0xff000000 | (((bb + (tb - bb) * t) | 0) << 16) | (((bgc + (tg - bgc) * t) | 0) << 8) | ((br + (tr - br) * t) | 0)) >>> 0;
-          }
+      const gl = (0xff000000 | (((fb + (255 - fb) * 0.05) | 0) << 16) | (((fg + (255 - fg) * 0.05) | 0) << 8) | ((fr + (255 - fr) * 0.05) | 0)) >>> 0;   // hairline cell borders
+      const xs = c * cwD, m = g ? mask(g) : null, tr = (col >>> 16) & 255, tg = (col >>> 8) & 255, tb = col & 255;
+      let k = 0;
+      for (let y = 0; y < chD; y++) {
+        const p = (r * chD + y) * W + xs;
+        for (let x = 0; x < cwD; x++) {
+          const base = y === 0 || x === 0 ? gl : bg, a = m ? m[k++] : 0;
+          if (a === 0) { OUT32[p + x] = base; continue; }
+          const br = base & 255, bgc = (base >>> 8) & 255, bb = (base >>> 16) & 255, t = a / 255;
+          OUT32[p + x] = (0xff000000 | (((bb + (tb - bb) * t) | 0) << 16) | (((bgc + (tg - bgc) * t) | 0) << 8) | ((br + (tr - br) * t) | 0)) >>> 0;
         }
       }
     }
+    if (x1 >= 0) ctx.putImageData(outImg, 0, 0, x0 * cwD, r * chD, (x1 - x0 + 1) * cwD, chD);
   }
-  ctx.putImageData(outImg, 0, 0);
 }
 
-function heal(dt) {
-  if (!clr) return;
-  const d = dt * 0.022;
-  for (let i = 0; i < clr.length; i++) if (clr[i] > 0) clr[i] = Math.max(0, clr[i] - d);
-}
-
-// ---------- boot ----------
+// ---------- wiping the frost away with the pointer ----------
 function wipe(cx, cy, rad) {
   const { cols, rows } = L;
   for (let r = Math.max(0, Math.floor(cy - rad)); r <= Math.min(rows - 1, Math.ceil(cy + rad)); r++) {
@@ -905,80 +983,102 @@ function wipe(cx, cy, rad) {
     }
   }
 }
+function heal(dt) {
+  const d = dt * 0.022;
+  for (let i = 0; i < clr.length; i++) if (clr[i] > 0) clr[i] = Math.max(0, clr[i] - d);
+}
 
+// ---------- boot ----------
 function setup() {
   layout();
-  const { w, h, dpr, cols, rows, SW, SH, cw, ch, n } = L;
-  canvas.width = cols * cw; canvas.height = rows * ch;
+  const { cols, rows, cwD, chD, dpr, SW, SH, n } = L;
+  canvas.width = cols * cwD; canvas.height = rows * chD;
+  canvas.style.width = (cols * cwD) / dpr + "px"; canvas.style.height = (rows * chD) / dpr + "px";
   L.font = getComputedStyle(canvas).fontFamily || "monospace";
-  sceneC = mk(SW, SH); S = sceneC.getContext("2d", { willReadFrequently: true });
-  fillC = mk(cols, rows); fillCtx = fillC.getContext("2d"); fillImg = fillCtx.createImageData(cols, rows);
-  G = new Uint16Array(n); C = new Uint32Array(n);
-  gridC = mk(canvas.width, canvas.height);
-  const g = gridC.getContext("2d");
-  g.strokeStyle = "rgba(255,255,255,0.05)"; g.lineWidth = 1; g.beginPath();
-  for (let c = 0; c <= cols; c++) { const x = Math.round(c * cw * dpr) + 0.5; g.moveTo(x, 0); g.lineTo(x, h * dpr); }
-  for (let r = 0; r <= rows; r++) { const y = Math.round(r * ch * dpr) + 0.5; g.moveTo(0, y); g.lineTo(w * dpr, y); }
-  g.stroke();
+  S = mk(SW, SH).getContext("2d", { willReadFrequently: true });
+  Dc = mk(SW, SH).getContext("2d", { willReadFrequently: true });
   cellJ = new Int8Array(n); cellP = new Float32Array(n); cellH6 = new Float32Array(n); cellH7 = new Float32Array(n);
-  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) { const i = r * cols + c; cellJ[i] = Math.floor(hash(c, r, SEED) * 3) - 1; cellP[i] = hash(c, r, 3) * 40; cellH6[i] = hash(c, r, 6); cellH7[i] = hash(c, r, 7); }
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const i = r * cols + c;
+      cellJ[i] = Math.floor(hash(c, r, SEED) * 3) - 1; cellP[i] = hash(c, r, 3) * 40; cellH6[i] = hash(c, r, 6); cellH7[i] = hash(c, r, 7);
+    }
+  }
+  starG = new Uint16Array(n); starC = new Uint32Array(n); starCells = [];
+  PF = new Uint32Array(n).fill(0xffffffff); PG = new Uint16Array(n); PC = new Uint32Array(n);
   MASK.clear();
-  outImg = ctx.createImageData(cols * cw, rows * ch); OUT32 = new Uint32Array(outImg.data.buffer);
-  buildCells(); genFrost(); buildWorld(); bakeAll();
+  outImg = ctx.createImageData(cols * cwD, rows * chD); OUT32 = new Uint32Array(outImg.data.buffer);
+  buildCells(); genFrost(); buildWorld(); bakeStatic();
+}
+
+// A sheet of the bird models, drawn large and without the character grid, for checking anatomy.
+function modelSheet() {
+  const W = 1700, Hh = 1000;
+  canvas.width = W; canvas.height = Hh; canvas.style.width = W + "px"; canvas.style.height = Hh + "px";
+  X = ctx; D = mk(W, Hh).getContext("2d");
+  ctx.fillStyle = "#1c3470"; ctx.fillRect(0, 0, W, Hh);
+  const poses = [{}, { peck: 1 }, { mode: "fly", wingP: 0.02 }, { mode: "fly", wingP: 0.2 }, { mode: "fly", wingP: 0.42 }, { mode: "fly", wingP: 0.7 }, { mode: "fly", wingP: 0.9 }, { mode: "fly", wingP: -1 }, { mode: "fly", wingP: 0.1, flare: 1 }];
+  ["bullfinch", "bullfinchF", "tit", "sparrow", "sparrowF", "magpie"].forEach((nm, row) => poses.forEach((ps, col) => {
+    const sp = SPEC[nm], sc = nm === "magpie" ? 4.2 : 6.5, fl = ps.flare || 0;
+    const b = Object.assign(newBird(nm, 0), { s: sp.s, x: 0, y: 0, mode: "sit", pitch: sp.perchPitch + (ps.peck ? 0.85 : 0), tailAng: -0.08 }, ps);
+    if (b.mode === "fly") { b.pitch = -0.95 * fl; b.tailAng = -0.35 * fl; b.tailFan = fl; }
+    for (const c of [X, D]) c.setTransform(sc, 0, 0, sc, 100 + col * 185, 90 + row * 160);
+    drawBird(b);
+  }));
 }
 
 canvas = document.querySelector("canvas");
 ctx = canvas.getContext("2d", { alpha: false });
-setup();
+if (QS.has("dbg")) addEventListener("error", (e) => { document.title = "ERR " + e.message + " @" + e.lineno; });
 
-const STEP = 1 / 30;
-{
-  const skip = Number(QS.get("t")) || 0;
-  for (let k = 0; k < skip / STEP; k++) update(STEP);
+if (QS.has("model")) modelSheet();
+else {
+  setup();
+  const STEP = 1 / 30;
+  for (let k = 0, skip = Number(QS.get("t")) || 0; k < skip / STEP; k++) update(STEP);
+  if (QS.has("clear")) clr.fill(1);
+
+  if (SAVER) {
+    // as a screen saver, any real input closes it
+    let ox = null, oy = null;
+    const quit = () => { if (window.chrome && window.chrome.webview) window.chrome.webview.postMessage("exit"); };
+    addEventListener("mousemove", (e) => { if (ox === null) { ox = e.screenX; oy = e.screenY; return; } if (Math.hypot(e.screenX - ox, e.screenY - oy) > 12) quit(); });
+    for (const t of ["keydown", "mousedown", "touchstart", "wheel"]) addEventListener(t, quit);
+    document.documentElement.style.cursor = "none"; canvas.style.cursor = "none";
+  } else {
+    const pointer = (e) => wipe((e.clientX * L.dpr) / L.cwD, (e.clientY * L.dpr) / L.chD, 3.6);
+    canvas.addEventListener("pointermove", pointer);
+    canvas.addEventListener("pointerdown", pointer);
+  }
+
+  let rto = 0;
+  addEventListener("resize", () => { clearTimeout(rto); rto = setTimeout(() => { setup(); render(); }, 150); });
+
+  let FPS = clamp(Number(QS.get("fps")) || 30, 5, 60), cost = 0, lastT = 0, acc = 0;
+  const still = matchMedia("(prefers-reduced-motion: reduce)");
+  const frame = (now) => {
+    requestAnimationFrame(frame);
+    if (now - lastT < 1000 / FPS - 2) return;
+    const dt = Math.min(0.1, (now - lastT) / 1000);
+    lastT = now; acc += dt;
+    let k = 0;
+    while (acc >= STEP && k < 4) { update(STEP); acc -= STEP; k++; }
+    if (k === 4) acc = 0;
+    heal(dt);
+    const t0 = performance.now();
+    render();
+    cost = cost * 0.9 + (performance.now() - t0) * 0.1;
+    if (!QS.has("fps")) { if (cost > (1000 / FPS) * 0.85 && FPS > 15) FPS -= 1; else if (cost < (1000 / FPS) * 0.45 && FPS < 30) FPS += 1; }
+  };
+  if (still.matches) { for (let k = 0; k < 600; k++) update(STEP); render(); }
+  else { render(); lastT = performance.now(); requestAnimationFrame(frame); }
+  if (QS.has("bench")) {
+    for (let i = 0; i < 20; i++) { update(STEP); render(); }
+    const t0 = performance.now();
+    for (let i = 0; i < 40; i++) { update(STEP); render(); }
+    document.title = "ms/frame " + ((performance.now() - t0) / 40).toFixed(1);
+  }
 }
-
-if (QS.has("clear")) clr.fill(1);
-
-const SAVER = QS.has("saver");
-if (SAVER) {
-  let ox = null, oy = null;
-  const quit = () => { if (window.chrome && window.chrome.webview) window.chrome.webview.postMessage("exit"); };
-  addEventListener("mousemove", (e) => { if (ox === null) { ox = e.screenX; oy = e.screenY; return; } if (Math.hypot(e.screenX - ox, e.screenY - oy) > 12) quit(); });
-  for (const t of ["keydown", "mousedown", "touchstart", "wheel"]) addEventListener(t, quit);
-  document.documentElement.style.cursor = "none"; canvas.style.cursor = "none";
-}
-
-function pointer(e) {
-  if (SAVER) return;
-  const cx = e.clientX / L.cw, cy = e.clientY / L.ch;
-  wipe(cx, cy, 3.6);
-  hint.until = Math.min(hint.until, time + 1.5);
-}
-canvas.addEventListener("pointermove", pointer);
-canvas.addEventListener("pointerdown", pointer);
-
-let rto = 0;
-addEventListener("resize", () => { clearTimeout(rto); rto = setTimeout(() => { setup(); render(); }, 120); });
-
-let FPS = clamp(Number(QS.get("fps")) || 30, 5, 60), cost = 0;
-const still = matchMedia("(prefers-reduced-motion: reduce)");
-let lastT = 0, acc = 0;
-function frame(now) {
-  requestAnimationFrame(frame);
-  if (now - lastT < 1000 / FPS - 2) return;
-  const dt = Math.min(0.1, (now - lastT) / 1000);
-  lastT = now; acc += dt;
-  let k = 0;
-  while (acc >= STEP && k < 4) { update(STEP); acc -= STEP; k++; }
-  if (k === 4) acc = 0;
-  heal(dt);
-  const t0 = performance.now();
-  render();
-  cost = cost * 0.9 + (performance.now() - t0) * 0.1;
-  if (!QS.has("fps")) { if (cost > 1000 / FPS * 0.85 && FPS > 15) FPS -= 1; else if (cost < 1000 / FPS * 0.45 && FPS < 30) FPS += 1; }
-}
-render();
-if (!still.matches) { lastT = performance.now(); requestAnimationFrame(frame); }
 </script>
 </body>
 </html>
