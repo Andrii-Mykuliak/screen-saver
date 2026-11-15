@@ -481,25 +481,25 @@ const SPEC = {
   bullfinch: { flock: "bullfinch", s: 2.5, plump: 1, headR: 1.12, TL: 3.0, notch: true, bill: [0.55, 0.42], billCol: "#34343e", legY: 2.05, leg: "#6a5248",
     under: "#e8566c", vent: "#f0f0f4", back: "#8c95ab", rump: "#f4f4f8", cap: "#14141b", cheek: "#e8566c", head: "finch",
     wing: "#1c1c26", wingBar: "#dfe3ec", barW: 0.42, wingUnder: "#aab1c2", tail: "#14141b", eye: [104, 104, 122],
-    wingL: 4.3, hz: 6.5, bound: true, boundT: 0.5, boundA: 1.2, speed: 34, perchPitch: -0.36, flickA: 0.3,
+    wingL: 4.3, hz: 6.5, boundT: 0.72, ff: 0.6, beats: 3, surge: 9, bob: 1.7, speed: 34, perchPitch: -0.36, flickA: 0.3,
     stay: [9, 22], away: [5, 14], peck: 0.3, turn: 0.12, flick: 0.1, hop: 0.04, weight: 1 },
   bullfinchF: { base: "bullfinch", under: "#b59c90", cheek: "#b59c90", back: "#8d877c" },
   tit: { flock: "tit", s: 2.0, plump: 0.92, headR: 1.08, TL: 2.7, bill: [0.42, 0.2], billCol: "#3a3a48", legY: 1.95, leg: "#5a6680",
     under: "#f4d63a", vent: "#ece6b8", back: "#5f8fd2", cap: "#2f6fe6", cheek: "#f7f7f3", dark: "#1a2f6c", stripe: "#3a477a", head: "tit",
     wing: "#2c5fc8", wingBar: "#f2f5fb", barW: 0.26, wingUnder: "#c6d0e4", tail: "#2a58b8", eye: [14, 16, 26],
-    wingL: 3.9, hz: 8, bound: true, boundT: 0.42, boundA: 1.0, speed: 40, perchPitch: -0.3, flickA: 0.45,
+    wingL: 3.9, hz: 8, boundT: 0.5, ff: 0.6, beats: 2, surge: 8, bob: 1.0, speed: 40, perchPitch: -0.3, flickA: 0.45,
     stay: [3, 7], away: [14, 34], peck: 1.1, turn: 0.55, flick: 0.5, hop: 0.3, weight: 0.5 },
   sparrow: { flock: "sparrow", s: 2.3, plump: 0.95, headR: 1.1, TL: 2.7, bill: [0.6, 0.36], billCol: "#4a443e", legY: 1.95, leg: "#b48e74",
     under: "#cbc3b5", vent: "#dad4c8", back: "#9b6c40", streaks: "#3a2a1c", cap: "#7f838c", nape: "#8c4c24", cheek: "#d8d2c6", bib: "#17171c", head: "sparrow",
     wing: "#8c6038", wingBar: "#f0eadc", barW: 0.26, wingUnder: "#b8afa0", tail: "#6c4c32", eye: [16, 14, 14],
-    wingL: 3.9, hz: 8.5, bound: false, boundT: 0.5, boundA: 0, speed: 42, perchPitch: -0.3, flickA: 0.4,
+    wingL: 3.9, hz: 8.5, boundT: 0.5, ff: 0.75, beats: 3, surge: 6, bob: 0.85, speed: 42, perchPitch: -0.3, flickA: 0.4,
     stay: [4, 10], away: [9, 24], peck: 0.8, turn: 0.4, flick: 0.3, hop: 0.2, weight: 0.8 },
   sparrowF: { base: "sparrow", cap: "#9a8468", nape: "#a08a6a", bib: null, under: "#c9bfae" },
   magpie: { flock: "magpie", s: 3.0, plump: 0.9, headR: 1.05, TL: 6.8, wedge: true, bill: [1.25, 0.4], billCol: "#1c1d28", legY: 2.2, leg: "#1c1d28",
     under: "#f4f4f2", breast: "#0d0e18", breastE: [1.9, -0.3, 1.6, 1.5], vent: "#0d0e18", ventE: [-1.9, 0.95, 0.9, 0.6],
     back: "#0d0e18", cap: "#0d0e18", cheek: "#0d0e18", scap: "#f4f4f2", head: "magpie",
     wing: "#16307a", wingPrim: "#f4f4f2", wingUnder: "#d9dbe2", tail: "#101c48", tailGloss: "#1f3f92", eye: [128, 132, 150],
-    wingL: 5.4, hz: 4.2, bound: false, glide: true, boundT: 1.2, boundA: 0, speed: 30, perchPitch: -0.22, flickA: 0.55,
+    wingL: 5.4, hz: 4.2, glide: true, boundT: 1.25, ff: 0.72, beats: 4, TH: 115, LF: 320, speed: 30, perchPitch: -0.22, flickA: 0.55,
     stay: [7, 12], away: [120, 240], peck: 0.15, turn: 0.3, flick: 0.5, hop: 0, weight: 3 },
 };
 for (const k in SPEC) {
@@ -507,6 +507,14 @@ for (const k in SPEC) {
   const sp = SPEC[k];
   sp.wingFar = shade(sp.wing, 0.7); sp.wingUnderFar = shade(sp.wingUnder, 0.7);
   if (sp.wingPrim) sp.wingPrimFar = shade(sp.wingPrim, 0.78);
+  // Flight forces. A downstroke fills 45% of a beat; the means are subtracted so the bird keeps to its line on average.
+  sp.meanF = 0.45 * sp.ff;
+  sp.glideL = sp.glide ? (0.85 * 0.45 * sp.ff) / (1 - 0.85 * (1 - sp.ff)) : 0;
+  sp.meanL = sp.glide ? sp.glideL / 0.85 : sp.meanF;
+  if (!sp.TH) {                                        // from the wanted swing in speed and the height of one bound
+    const k = 2 / (sp.meanF * (1 - sp.ff) * sp.boundT);
+    sp.TH = k * sp.surge; sp.LF = (k * 4 * sp.bob) / sp.boundT;
+  }
 }
 
 const HEADS = {
@@ -637,7 +645,7 @@ function newBird(name, wait) {
   const sp = SPEC[name];
   return { sp, s: sp.s * (L.bk || 1) * (0.96 + 0.08 * Math.random()), x: -60, y: -60, dir: 1, mode: "away", t: 0, wait, pitch: 0, wingP: -1, beat: Math.random(), flare: 0,
     tailAng: 0, tailFan: 0, peck: 0, turn: 0, flick: 0, hopY: 0, fluff: 0, fluffT: 0, perch: null, sitLeft: 0, scared: false, panic: false, eye: null,
-    ft: 0, dur: 1, kf: "land", p0: null, p1: null, p2: null, p3: null };
+    ft: 0, dur: 1, kf: "land", p0: null, p1: null, p2: null, p3: null, so: 0, sv: 0, ho: 0, hv: 0 };
 }
 
 function spawnPoint(b) {
@@ -662,7 +670,7 @@ function freePerch(b) {
 
 function launch(b, to, kf) {
   const dx = to[0] - b.x, dy = to[1] - b.y, dist = Math.hypot(dx, dy), sg = dx >= 0 ? 1 : -1;
-  b.mode = "fly"; b.ft = 0; b.kf = kf; b.p0 = [b.x, b.y]; b.p3 = to; b.dir = sg; b.peck = 0; b.turn = 0; b.hopY = 0;
+  b.mode = "fly"; b.ft = 0; b.so = b.sv = b.ho = b.hv = 0; b.kf = kf; b.p0 = [b.x, b.y]; b.p3 = to; b.dir = sg; b.peck = 0; b.turn = 0; b.hopY = 0;
   if (kf === "land") {                                 // swoop in below the perch and rise onto it
     b.p1 = [b.x + dx * 0.45, b.y + dy * 0.3 - 3]; b.p2 = [to[0] - sg * Math.min(10, dist * 0.3), to[1] + Math.min(5, dist * 0.15)];
     b.dur = clamp(dist / b.sp.speed, 1.0, 4.5);
@@ -686,27 +694,46 @@ function leave(b) {
   for (const m of BIRDS) if (m !== b && m.sp.flock === sp.flock && m.mode === "sit") m.sitLeft = Math.min(m.sitLeft, 0.3 + Math.random() * 1.6);
 }
 
+// Where the wings are at flight time t: a burst of whole wingbeats, then a pause with them shut (or held out, gliding).
+function wingPhase(sp, t) {
+  const cyc = (t / sp.boundT) % 1;
+  if (cyc < sp.ff) return ((cyc / sp.ff) * sp.beats) % 1;
+  return sp.glide ? -2 : -1;
+}
+
 function flightStep(b, dt) {
-  const sp = b.sp, kf = b.kf;
+  const sp = b.sp, kf = b.kf, t0 = b.ft;
   b.ft += dt;
   const tau = Math.min(1, b.ft / b.dur);
   const u = kf === "land" ? 1 - Math.pow(1 - tau, 1.8) : kf === "hop" ? smooth(tau) : Math.pow(tau, 1.5);
-  const v = 1 - u, a = v * v * v, c1 = 3 * v * v * u, c2 = 3 * v * u * u, d = u * u * u;
-  let nx = a * b.p0[0] + c1 * b.p1[0] + c2 * b.p2[0] + d * b.p3[0], ny = a * b.p0[1] + c1 * b.p1[1] + c2 * b.p2[1] + d * b.p3[1];
+  const v = 1 - u, p0 = b.p0, p1 = b.p1, p2 = b.p2, p3 = b.p3;
+  let nx = v * v * v * p0[0] + 3 * v * v * u * p1[0] + 3 * v * u * u * p2[0] + u * u * u * p3[0];
+  let ny = v * v * v * p0[1] + 3 * v * v * u * p1[1] + 3 * v * u * u * p2[1] + u * u * u * p3[1];
+  let tx = 3 * v * v * (p1[0] - p0[0]) + 6 * v * u * (p2[0] - p1[0]) + 3 * u * u * (p3[0] - p2[0]);
+  let ty = 3 * v * v * (p1[1] - p0[1]) + 6 * v * u * (p2[1] - p1[1]) + 3 * u * u * (p3[1] - p2[1]);
+  const tl = Math.hypot(tx, ty) || 1;
+  tx /= tl; ty /= tl;
   const landing = kf !== "leave";
   const flare = landing ? smooth(clamp((tau - (kf === "hop" ? 0.5 : 0.8)) / (kf === "hop" ? 0.45 : 0.18), 0, 1)) : 0;
-  // small birds bound: a burst of wingbeats, then a short dip with the wings shut
-  const cyc = (b.ft / sp.boundT) % 1, env = kf === "hop" ? 0 : clamp(Math.min((tau * b.dur) / 0.5, ((1 - tau) * b.dur) / 0.7), 0, 1);
-  let wingP = -3;
-  if (flare === 0 && env > 0.6) {
-    if (sp.bound) { ny += sp.boundA * env * (cyc < 0.6 ? Math.cos((Math.PI * cyc) / 0.6) : -Math.cos((Math.PI * (cyc - 0.6)) / 0.4)); if (cyc >= 0.6) wingP = -1; }
-    else if (sp.glide && cyc > 0.72) wingP = -2;
+  const cruise = kf !== "hop" && flare === 0;
+  // Each downstroke kicks the bird forward and up; between strokes, and with the wings shut, it coasts, slows and sinks.
+  // so/ho are how far that has carried it ahead of and above the smooth line it is following.
+  const N = 4, h = dt / N;
+  for (let k = 0; k < N; k++) {
+    const ph = cruise ? wingPhase(sp, t0 + (k + 0.5) * h) : -3;
+    const fF = ph === -3 ? 0 : (ph >= 0 && ph < 0.45 ? 1 : 0) - sp.meanF;
+    const fL = ph === -3 ? 0 : (ph >= 0 && ph < 0.45 ? 1 : ph === -2 ? sp.glideL : 0) - sp.meanL;
+    b.sv += (sp.TH * fF - 1.2 * b.sv - 5 * b.so) * h; b.so += b.sv * h;
+    b.hv += (sp.LF * fL - 1.2 * b.hv - 5 * b.ho) * h; b.ho += b.hv * h;
   }
+  // the bounding fades out well before the perch, so the bird steadies on its approach and never slides backwards
+  const env = kf === "hop" ? 0 : smooth(clamp(Math.min(b.ft / 0.35, landing ? (0.8 - tau) / 0.3 : (b.dur - b.ft) / 0.6), 0, 1));
+  nx += tx * b.so * env; ny += ty * b.so * env - b.ho * env;
   const vx = (nx - b.x) / dt, vy = (ny - b.y) / dt;
   b.x = nx; b.y = ny;
-  b.beat += dt * sp.hz * (flare > 0 ? 1.25 : 1);
-  b.wingP = wingP === -3 ? b.beat % 1 : wingP;
-  const want = lerp(clamp(Math.atan2(vy, Math.abs(vx) + 1e-3), -0.55, 0.55), -0.95, flare);
+  if (cruise) b.wingP = wingPhase(sp, b.ft);
+  else { b.beat += dt * sp.hz * 1.25; b.wingP = b.beat % 1; }
+  const want = lerp(clamp(0.75 * Math.atan2(vy, Math.abs(vx) + 1e-3), -0.5, 0.5), -0.95, flare);
   b.pitch += (want - b.pitch) * Math.min(1, dt * 12);
   b.flare = flare; b.tailFan = flare; b.tailAng = -0.35 * flare;
   if (tau < 1) return;
@@ -899,6 +926,86 @@ function updateSquirrel(dt) {
   }
 }
 
+// ---------- the flying sleigh ----------
+// Far away and rarely, a sleigh crosses the top of the sky and makes one turn around the moon:
+// it passes in front of the disc on the near side of its circle and behind it on the far side.
+const SLC = { deer: "#d2a878", deerD: "#a67c50", antler: "#eadcc0", sleigh: "#d8402c", runner: "#f0c860", sack: "#7a9a50", coat: "#e8483c", trim: "#f6f2ea", rein: "#c9a050" };
+const SL = { mode: "away", t: 0, wait: 0, s: 0, dirX: -1, x0: 0, L1: 0, C: 0, L2: 0, Rc: 0, sc: 1, ph: 0, sparkT: 0 };
+let sparks = [];
+
+function sleighAt(s) {
+  const q = SL, Mx = MOON.x * L.Wd, My = MOON.y, tilt = 0.27;
+  let x, z, tx, d;
+  if (s < q.L1) { x = q.x0 + q.dirX * s; z = -q.Rc; tx = q.dirX; d = q.L1 - s; }
+  else if (s < q.L1 + q.C) { const a = (s - q.L1) / q.Rc; x = Mx + q.dirX * q.Rc * Math.sin(a); z = -q.Rc * Math.cos(a); tx = q.dirX * Math.cos(a); d = 0; }
+  else { d = s - q.L1 - q.C; x = Mx + q.dirX * d; z = -q.Rc; tx = q.dirX; }
+  const y = My + tilt * z - 3.5 * (1 - Math.exp(-d / 45)) + 0.5 * Math.sin(s * 0.11);
+  return { x, y, z, tx };
+}
+
+function drawDeer(ph) {
+  const c = SLC, g = Math.sin(ph), h = Math.cos(ph);
+  line(1.1, 0.5, 1.9 + 1.1 * g, 2.1 - 0.5 * Math.max(0, h), 0.34, c.deerD); line(1.3, 0.5, 2.3 + 0.9 * Math.sin(ph - 0.7), 2.1, 0.34, c.deerD);
+  line(-1.3, 0.5, -1.9 - 1.1 * g, 2.1 - 0.5 * Math.max(0, -h), 0.34, c.deerD); line(-1.1, 0.5, -2.3 - 0.9 * Math.sin(ph - 0.7), 2.1, 0.34, c.deerD);
+  shape(pEll(0, 0, 2.0, 0.85), c.deer, 0);
+  shape(pEll(-2.0, -0.45, 0.4, 0.3), c.trim);
+  line(1.5, -0.3, 2.35, -1.45, 0.75, c.deer);
+  shape(pEll(2.8, -1.7, 0.72, 0.42, 0.25), c.deer, 0);
+  line(2.3, -1.95, 1.75, -3.3, 0.24, c.antler); line(2.0, -2.7, 2.7, -3.2, 0.22, c.antler); line(1.85, -3.1, 1.2, -3.5, 0.22, c.antler);
+}
+
+function drawSleighBody() {
+  const c = SLC;
+  line(-2.9, 1.25, 2.3, 1.25, 0.3, c.runner); line(2.3, 1.25, 3.2, 0.35, 0.3, c.runner); line(3.2, 0.35, 2.9, -0.2, 0.3, c.runner);
+  line(-1.8, 0.6, -1.8, 1.2, 0.24, c.runner); line(1.4, 0.6, 1.4, 1.2, 0.24, c.runner);
+  shape(pPoly([-2.6, 0.7, 2.1, 0.7, 2.6, -0.7, 1.4, -0.55, 1.0, -0.05, -1.5, -0.05, -2.1, -1.7, -2.9, -1.7]), c.sleigh);
+  shape(pEll(-1.35, -1.0, 1.0, 0.95), c.sack);
+  shape(pEll(0.35, -0.95, 0.75, 0.95), c.coat);
+  shape(pEll(0.45, -2.1, 0.5, 0.5), "#e6c0a0");
+  shape(pPoly([0.0, -2.35, 0.95, -2.35, 0.2, -3.25]), c.coat);
+  shape(pEll(0.47, -2.4, 0.6, 0.2), c.trim);
+}
+
+function drawSleigh() {
+  const q = SL, Mx = MOON.x * L.Wd, My = MOON.y, gap = 6.2 * q.sc;
+  const units = [0, 1, 2, 3].map((k) => Object.assign(sleighAt(q.s - k * gap - (k === 3 ? 0.9 * q.sc : 0)), { k }));
+  units.sort((a, b) => b.z - a.z);                     // far ones first
+  for (const un of units) {
+    const far = un.z > 0, zs = q.sc * (1 - 0.15 * (un.z / q.Rc)), fx = (un.tx >= 0 ? 1 : -1) * Math.max(0.3, Math.abs(un.tx));
+    G2.save();
+    if (far) G2.clip((c) => { c.beginPath(); c.rect(-50, -50, L.Wd + 100, 200); c.arc(Mx, My, MOON.r, 0, TAU, true); });   // hidden behind the moon
+    G2.translate(un.x, un.y + 0.3 * q.sc * Math.sin(q.ph * 0.5 + un.k * 1.3)); G2.scale(fx * zs, zs);
+    if (un.k === 3) drawSleighBody(); else drawDeer(q.ph + un.k * 1.9);
+    G2.restore();
+  }
+}
+
+function updateSleigh(dt) {
+  const q = SL, Wd = L.Wd;
+  for (const p of sparks) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 1.2 * dt; p.life -= dt * 0.75; }
+  if (sparks.length) sparks = sparks.filter((p) => p.life > 0);
+  if (q.mode === "away") {
+    q.t += dt;
+    if (q.t < q.wait) return;
+    q.mode = "fly"; q.s = 0; q.sc = 1.35 * L.bk; q.Rc = MOON.r * 2.5;
+    q.dirX = Math.random() < 0.7 ? -1 : 1;
+    const Mx = MOON.x * Wd, edge = 36 * q.sc;
+    q.x0 = q.dirX < 0 ? Wd + edge : -edge;
+    q.L1 = Math.abs(Mx - q.x0); q.C = TAU * q.Rc; q.L2 = (q.dirX < 0 ? Mx : Wd - Mx) + edge;
+    return;
+  }
+  q.s += 19 * dt; q.ph += dt * 10;
+  q.sparkT -= dt;
+  if (q.sparkT <= 0) {                                 // star dust falls from the runners
+    q.sparkT = 0.07;
+    const p = sleighAt(q.s - 3 * 6.2 * q.sc - 3.5 * q.sc), Mx = MOON.x * Wd;
+    if (!(p.z > 0 && Math.hypot(p.x - Mx, p.y - MOON.y) < MOON.r)) {
+      sparks.push({ x: p.x + (Math.random() - 0.5) * 2, y: p.y + 1 + Math.random() * 1.5, vx: (Math.random() - 0.5) * 1.5, vy: 0.5 + Math.random() * 1.5, life: 1, ch: [46, 46, 43, 42, 39][(Math.random() * 5) | 0] });
+    }
+  }
+  if (q.s > q.L1 + q.C + q.L2) { q.mode = "away"; q.t = 0; q.wait = QS.has("sleigh") ? 6 : 300 + Math.random() * 360; }
+}
+
 function buildWorld() {
   const Wd = L.Wd, rnd = mulberry32(SEED + 33);
   STARS = CAT.map(([ra, dec, mag, c], k) => { const d = (dec * Math.PI) / 180; return { ra: (ra * Math.PI) / 12, sd: Math.sin(d), cd: Math.cos(d), mag, rgb: TINT[c], ph: rnd() * TAU, k }; });
@@ -912,6 +1019,7 @@ function buildWorld() {
     return newBird(nm, ZOO ? 0.3 + k * 0.5 : first[f] + (seen[f] - 1) * 1.4 + Math.random());
   });
   MAG = newBird("magpie", QS.has("mag") ? 0.5 : 45 + Math.random() * 25);
+  SL.mode = "away"; SL.t = 0; SL.wait = QS.has("sleigh") ? 1 : 150 + Math.random() * 200; sparks = [];
   SQ.mode = "away"; SQ.t = 0; SQ.eye = null; SQ.wait = QS.has("sq") ? 1 : 90 + Math.random() * 60;
 }
 
@@ -929,6 +1037,7 @@ function update(dt) {
   for (const b of BIRDS) updateBird(b, dt);
   updateBird(MAG, dt);
   updateSquirrel(dt);
+  updateSleigh(dt);
   for (const p of dust) { p.vy += 9 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt * 0.9; }
   if (dust.length) dust = dust.filter((p) => p.life > 0);
 }
@@ -937,6 +1046,7 @@ function drawScene() {
   const { SW, SH } = L;
   for (const [c, st] of [[S, staticS], [Dc, staticD]]) { c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, SW, SH); c.drawImage(st, 0, 0); }
   X = S; D = Dc; setW(X); setW(D);
+  if (SL.mode === "fly") drawSleigh();
   drawBranch(SNAG);
   if (MAG.mode !== "away") drawBird(MAG);
   drawBranch(ROWAN);
@@ -1070,6 +1180,7 @@ function render() {
   };
   for (const f of FLAKES) speck(f.x, f.y, f.z > 0.82 ? 42 : f.z > 0.6 ? 43 : f.z > 0.4 ? 58 : 46, 236, 244, 255, 0.55 + 0.45 * f.z);
   for (const p of dust) speck(p.x, p.y, p.ch, 240, 246, 255, Math.min(1, p.life * 1.6));
+  for (const p of sparks) speck(p.x, p.y, p.ch, 255, 216, 120, Math.min(1, p.life * 1.5));
 
   compose();
 }
