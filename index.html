@@ -100,7 +100,7 @@ function layout() {
 }
 
 function mk(w, h) { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; }
-const Y0 = 30;
+const Y0 = 0;
 const setW = (c) => c.setTransform(L.u, 0, 0, L.u, L.GX0, L.GY0 - Y0 * L.u);
 
 // ---------- static room: wall, frame, sill, rushnyks, candle, geranium ----------
@@ -218,7 +218,7 @@ function genFrost() {
       for (let c = p.x; c < p.x + p.w; c++) {
         const i = r * cols + c;
         const dE = Math.min(c - p.x, p.x + p.w - 1 - c, (r - p.y) * 1.5, (p.y + p.h - 1 - r) * 1.5);
-        let m = clamp(1 - dE / (mn * 0.17), 0, 1);
+        let m = clamp(1 - dE / (mn * 0.1), 0, 1);
         m = Math.pow(m, 0.8);
         m *= 0.55 + 0.7 * noise2(c * 0.22, r * 0.15, SEED);
         m += 0.16 * ((r - p.y) / p.h) * clamp(1 - dE / (mn * 0.45), 0, 1);
@@ -235,20 +235,20 @@ function genFrost() {
         if (c < p.x || c >= p.x + p.w || r < p.y || r >= p.y + p.h) break;
         const i = r * cols + c, t = t0 + tr * 0.45;
         if (t < frostB[i]) { frostB[i] = t; frostG[i] = tr > len - 0.8 && rnd() < 0.5 ? 42 : dirGlyph(a); }
-        if (depth < 3 && tr > next) {
-          next += 2.8 + rnd() * 1.4;
+        if (depth < 2 && tr > next) {
+          next += 2.2 + rnd() * 1.0;
           const sp = 0.78 - 0.1 * depth, sl = len * (0.42 - 0.07 * depth);
           grow(x, y, a + sp, sl, depth + 1, t); grow(x, y, a - sp, sl, depth + 1, t);
         }
       }
     };
-    for (let x = p.x + 2; x < p.x + p.w - 1; x += 11 + rnd() * 6) {
-      grow(x, p.y + 0.01, Math.PI / 2 + (rnd() - 0.5) * 0.8, mn * (0.035 + 0.07 * rnd()), 0, delay + rnd() * 8);
-      grow(x, p.y + p.h - 0.01, -Math.PI / 2 + (rnd() - 0.5) * 0.8, mn * (0.06 + 0.1 * rnd()), 0, delay + rnd() * 8);
+    for (let x = p.x + 2; x < p.x + p.w - 1; x += 16 + rnd() * 10) {
+      grow(x, p.y + 0.01, Math.PI / 2 + (rnd() - 0.5) * 0.8, mn * (0.08 + 0.14 * rnd()), 0, delay + rnd() * 8);
+      grow(x, p.y + p.h - 0.01, -Math.PI / 2 + (rnd() - 0.5) * 0.8, mn * (0.1 + 0.16 * rnd()), 0, delay + rnd() * 8);
     }
-    for (let y = p.y + 1.5; y < p.y + p.h - 1; y += 8 + rnd() * 4) {
-      grow(p.x + 0.01, y, (rnd() - 0.5) * 0.8, mn * (0.035 + 0.07 * rnd()), 0, delay + rnd() * 8);
-      grow(p.x + p.w - 0.01, y, Math.PI + (rnd() - 0.5) * 0.8, mn * (0.035 + 0.07 * rnd()), 0, delay + rnd() * 8);
+    for (let y = p.y + 1.5; y < p.y + p.h - 1; y += 12 + rnd() * 6) {
+      grow(p.x + 0.01, y, (rnd() - 0.5) * 0.8, mn * (0.08 + 0.14 * rnd()), 0, delay + rnd() * 8);
+      grow(p.x + p.w - 0.01, y, Math.PI + (rnd() - 0.5) * 0.8, mn * (0.08 + 0.14 * rnd()), 0, delay + rnd() * 8);
     }
     const corners = [[p.x, p.y, 0], [p.x + p.w - 0.01, p.y, 1], [p.x, p.y + p.h - 0.01, 3], [p.x + p.w - 0.01, p.y + p.h - 0.01, 2]];
     for (const [cx, cy, q] of corners) {
@@ -259,203 +259,99 @@ function genFrost() {
   }
 }
 
-// ---------- the world outside: drawn in units of 1/100 of the glass height ----------
+// ---------- the world outside: units of 1/100 of the glass height ----------
 const poly = (pts, fill) => { X.beginPath(); X.moveTo(pts[0], pts[1]); for (let k = 2; k < pts.length; k += 2) X.lineTo(pts[k], pts[k + 1]); X.closePath(); X.fillStyle = fill; X.fill(); };
 const ell = (x, y, rx, ry, fill, rot = 0) => { X.beginPath(); X.ellipse(x, y, Math.max(0.01, rx), Math.max(0.01, ry), rot, 0, TAU); X.fillStyle = fill; X.fill(); };
 const ln = (x1, y1, x2, y2, w, col) => { X.beginPath(); X.moveTo(x1, y1); X.lineTo(x2, y2); X.lineWidth = w; X.strokeStyle = col; X.lineCap = "round"; X.stroke(); };
-const rect = (x, y, w, h, fill) => { X.fillStyle = fill; X.fillRect(x, y, w, h); };
 function glow(x, y, r, rgb, a) {
   const g = X.createRadialGradient(x, y, 0, x, y, r);
   g.addColorStop(0, `rgba(${rgb},${a})`); g.addColorStop(1, `rgba(${rgb},0)`);
   X.globalCompositeOperation = "lighter"; X.fillStyle = g; X.fillRect(x - r, y - r, r * 2, r * 2); X.globalCompositeOperation = "source-over";
 }
-const depthScale = (y) => 0.7 + (y - 70) * 0.016;
 
-let HOUSES = {}, WELL = {}, TIPS = [], STARS = [], FLAKES = [];
-const farY = (x) => 60 + 4 * Math.sin(x * 0.07 + 1) + 3 * Math.sin(x * 0.13 + 2);
+let STARS = [], FLAKES = [], PERCHES = [], STEM = [], TWIGS = [], BERRIES = [];
+let time = 0, puffs = [], notes = [], birds = [];
+const farY = (x) => 68 + 3 * Math.sin(x * 0.05 + 1) + 2 * Math.sin(x * 0.11 + 2);
+const cap = { text: "Святвечір. Снігурі на горобині", t0: 0.6, dur: 7 };
+const setCap = (text, dur) => { cap.text = text; cap.t0 = time; cap.dur = dur; };
+const hint = { until: 24 };
+const star = { x: -12, y: 20, active: false, wait: 9, spark: 0 };
 
 function buildWorld() {
-  const Wd = L.Wd;
-  HOUSES = {
-    A: { cx: 0.22 * Wd, base: 74, w: 18, hgt: 8.5, wins: [-5, 5.2], door: { dx: 0, w: 3.2, h: 6, open: 0 }, chim: 5 },
-    B: { cx: 0.66 * Wd, base: 77, w: 20, hgt: 9, wins: [-5.5], door: { dx: 5.2, w: 3.4, h: 6.4, open: 0 }, chim: -4 },
-  };
-  if (Wd > 95) HOUSES.C = { cx: 0.5 * Wd, base: 75.5, w: 16, hgt: 8, wins: [-4], door: { dx: 4, w: 3, h: 5.6, open: 0 }, chim: 3 };
-  for (const h of Object.values(HOUSES)) {
-    h.door.x = h.cx + h.door.dx;
-    h.winRects = h.wins.map((dx) => ({ x: h.cx + dx - 2, y: h.base - h.hgt + 2.2, w: 4, h: 3.6 }));
-    h.smoke = { x: h.cx + h.chim, y: h.base - h.hgt - 8.6 };
+  const Wd = L.Wd, rnd = mulberry32(SEED + 31);
+  STARS = []; for (let k = 0; k < 70; k++) STARS.push({ x: rnd() * Wd, y: rnd() * 56, ph: rnd() * TAU, s: 0.5 + rnd() * 0.5 });
+  FLAKES = []; const nf = Math.round((Wd * 100) / 60);
+  for (let k = 0; k < nf; k++) FLAKES.push({ x: rnd() * (Wd + 10) - 5, y: rnd() * 104 - 2, z: 0.2 + rnd() * 0.8, ph: rnd() * TAU });
+  // a rowan branch sweeps in from the right edge, heavy with berries
+  STEM = []; TWIGS = []; BERRIES = []; PERCHES = [];
+  const x0 = Wd + 8, x1 = 0.4 * Wd;
+  for (let k = 0; k <= 30; k++) { const t = k / 30; STEM.push({ x: lerp(x0, x1, t), y: 30 + 16 * t + 6 * Math.sin(t * 3.1) + 5 * t * t, w: lerp(3.4, 0.9, t) }); }
+  const nT = clamp(Math.round(Wd / 16), 6, 12);
+  for (let k = 0; k < nT; k++) {
+    const t = 0.12 + (k / nT) * 0.84, i = Math.min(30, Math.round(t * 30)), p = STEM[i];
+    const up = k % 2 === 0 ? -1 : 1, len = 8 + rnd() * 8;
+    const ex = p.x - (3 + rnd() * 6), ey = p.y + up * len * (0.6 + rnd() * 0.5);
+    TWIGS.push({ x: p.x, y: p.y, cx: p.x - 2, cy: p.y + up * len * 0.2, ex, ey, w: Math.max(0.5, p.w * 0.5) });
+    const n = 4 + ((rnd() * 3) | 0);
+    for (let b = 0; b < n; b++) { const a = rnd() * TAU, d = Math.sqrt(rnd()) * 2.4; BERRIES.push({ x: ex + Math.cos(a) * d, y: ey + Math.sin(a) * d * 0.8, r: 0.6 + rnd() * 0.3 }); }
   }
-  HOUSES.A.winRects.push({ x: HOUSES.A.cx - 2, y: HOUSES.A.base - 5.8, w: 0, h: 0 });
-  HOUSES.A.winRects.pop();
-  WELL = { x: 0.4 * Wd, y: 80.5, a: 0.62 };
-  const rnd = mulberry32(SEED + 31);
-  STARS = [];
-  for (let k = 0; k < 44; k++) STARS.push({ x: rnd() * Wd, y: Y0 + rnd() * 34, ph: rnd() * TAU, s: 0.5 + rnd() * 0.5 });
-  FLAKES = [];
-  const nf = Math.round((Wd * 70) / 36);
-  for (let k = 0; k < nf; k++) FLAKES.push({ x: rnd() * (Wd + 10) - 5, y: Y0 - 2 + rnd() * (104 - Y0), z: 0.2 + rnd() * 0.8, ph: rnd() * TAU });
-}
-
-function house(h) {
-  const { cx, base, w, hgt } = h, top = base - hgt, l = cx - w / 2, r = cx + w / 2;
-  ell(cx, base + 0.4, w * 0.62, 1.7, "rgba(120,138,178,0.55)");
-  rect(l, top, w, hgt, "#b4bfdc");
-  rect(r - 3.6, top, 3.6, hgt, "#8e9bc2");
-  rect(l, base - 1.5, w, 1.5, "#3e5c98");
-  const roof = [l - 2.0, top + 1.5, l + 3.5, top - 7.4, r - 3.5, top - 7.4, r + 2.0, top + 1.5];
-  poly(roof, "#8c7448");
-  poly([l - 1.4, top + 0.3, l + 3.4, top - 7.6, r - 3.4, top - 7.6, r + 1.4, top + 0.3], "#e9eef8");
-  for (let x = l - 1.2; x < r + 1.4; x += 1.7) ell(x, top + 0.5 + 0.2 * Math.sin(x * 3), 1.0, 0.95, "#e9eef8");
-  for (let x = l - 0.8; x < r + 1.2; x += 3.9) poly([x - 0.3, top + 1.0, x + 0.3, top + 1.0, x, top + 2.5 + 1.0 * hash(x * 9, 1, SEED)], "#dfe8f6");
-  for (const wr of h.winRects) {
-    rect(wr.x - 0.6, wr.y - 0.6, wr.w + 1.2, wr.h + 1.2, "#2d5392");
-    rect(wr.x, wr.y, wr.w, wr.h, "#ffcf70");
-    rect(wr.x + wr.w / 2 - 0.2, wr.y, 0.4, wr.h, "#2d5392"); rect(wr.x, wr.y + wr.h / 2 - 0.2, wr.w, 0.4, "#2d5392");
-    rect(wr.x - 1.9, wr.y - 0.4, 1.2, wr.h + 0.8, "#3f6bb0"); rect(wr.x + wr.w + 0.7, wr.y - 0.4, 1.2, wr.h + 0.8, "#3f6bb0");
-    rect(wr.x - 0.9, wr.y + wr.h + 0.6, wr.w + 1.8, 0.6, "#e9eef8");
-    glow(wr.x + wr.w / 2, base + 2.5, 8, "255,196,96", 0.2);
-  }
-  const d = h.door;
-  rect(d.x - d.w / 2 - 0.5, base - d.h - 0.5, d.w + 1, d.h + 0.5, "#2d5392");
-  rect(d.x - d.w / 2, base - d.h, d.w, d.h, "#59402c");
-  ell(d.x + d.w * 0.28, base - d.h * 0.45, 0.28, 0.28, "#d8b25a");
-  rect(d.x - d.w / 2 - 1.3, base, d.w + 2.6, 0.7, "#e9eef8");
-  const cxm = h.smoke.x;
-  rect(cxm - 1.2, h.smoke.y, 2.4, 3.4, "#766a70");
-  ell(cxm, h.smoke.y, 1.6, 0.8, "#e9eef8");
-}
-
-function church(cx, base) {
-  const dome = (x, y, w, hh, roofCol) => {
-    rect(x - w / 2, y - hh, w, hh, "#6f6068");
-    rect(x - w / 2, y - hh, 0.8, hh, "#82727a");
-    rect(x - 0.7, y - hh * 0.65, 1.4, 1.7, "#ffcf70");
-    const t = y - hh;
-    X.beginPath(); X.moveTo(x - w / 2 - 0.9, t); X.quadraticCurveTo(x - w * 0.3, t - w * 0.62, x, t - w * 1.15); X.quadraticCurveTo(x + w * 0.3, t - w * 0.62, x + w / 2 + 0.9, t); X.closePath();
-    X.fillStyle = roofCol; X.fill();
-    X.beginPath(); X.moveTo(x - w / 2 - 0.6, t - 0.5); X.quadraticCurveTo(x - w * 0.28, t - w * 0.6, x, t - w * 1.15); X.quadraticCurveTo(x + w * 0.28, t - w * 0.6, x + w / 2 + 0.6, t - 0.5);
-    X.quadraticCurveTo(x, t - w * 0.45, x - w / 2 - 0.6, t - 0.5); X.fillStyle = "#e9eef8"; X.fill();
-    const ty = t - w * 1.15;
-    ln(x, ty, x, ty - 2.4, 0.4, "#d8b25a"); ln(x - 0.8, ty - 1.4, x + 0.8, ty - 1.4, 0.4, "#d8b25a");
-  };
-  rect(cx - 8, base - 4.2, 16, 4.2, "#6f6068");
-  rect(cx - 8.4, base - 4.6, 16.8, 0.8, "#e9eef8");
-  for (const dx of [-5.5, -2.7, 2.7, 5.5]) rect(cx + dx - 0.5, base - 3, 1, 1.8, "#ffcf70");
-  dome(cx - 5.6, base - 4.6, 4.4, 3.4, "#55607a");
-  dome(cx + 5.6, base - 4.6, 4.4, 3.4, "#55607a");
-  dome(cx, base - 4.6, 5.6, 6.2, "#4d587a");
+  for (let i = 5; i <= 28; i += 3) PERCHES.push({ x: STEM[i].x, y: STEM[i].y - STEM[i].w * 0.5, taken: null });
+  birds = [];
+  const nb = clamp(Math.round(Wd / 38), 3, 5);
+  for (let k = 0; k < nb; k++) birds.push({ x: Wd + 12, y: 10 + Math.random() * 30, dir: -1, ph: Math.random() * 6, state: "wait", t: 0, wait: 0.3 + k * 1.6 + Math.random() * 2, perch: null, from: null, dur: 1, peck: 0, stay: 0, s: 3.1, flying: true });
 }
 
 function bakeSky() {
   X = skyC.getContext("2d"); setW(X);
   const Wd = L.Wd;
-  const g = X.createLinearGradient(0, Y0 - 4, 0, 72);
-  g.addColorStop(0, "#050a26"); g.addColorStop(0.45, "#16275a"); g.addColorStop(0.8, "#3a5288"); g.addColorStop(1, "#8097c0");
-  X.fillStyle = g; X.fillRect(-6, Y0 - 10, Wd + 12, 130);
-  const w = X.createLinearGradient(0, 50, 0, 72);
-  w.addColorStop(0, "rgba(230,140,100,0)"); w.addColorStop(1, "rgba(235,150,110,0.26)");
-  X.fillStyle = w; X.fillRect(-6, 50, Wd + 12, 24);
-  const mx = 0.16 * Wd, my = 42;
-  const h = X.createRadialGradient(mx, my, 3, mx, my, 24);
-  h.addColorStop(0, "rgba(190,205,240,0.4)"); h.addColorStop(1, "rgba(190,205,240,0)");
-  X.fillStyle = h; X.fillRect(mx - 24, my - 24, 48, 48);
-  ell(mx, my, 5.4, 5.4, "#f0efdc");
-  ell(mx - 1.6, my - 1, 1.3, 1.1, "rgba(170,170,155,0.5)"); ell(mx + 1.8, my + 1.6, 1.6, 1.3, "rgba(170,170,155,0.45)"); ell(mx + 0.4, my - 2.6, 0.9, 0.8, "rgba(170,170,155,0.4)");
+  const g = X.createLinearGradient(0, 0, 0, 72);
+  g.addColorStop(0, "#04081f"); g.addColorStop(0.5, "#101e4c"); g.addColorStop(1, "#33497f");
+  X.fillStyle = g; X.fillRect(-6, -6, Wd + 12, 130);
+  const mx = 0.17 * Wd, my = 30;
+  const h = X.createRadialGradient(mx, my, 4, mx, my, 34);
+  h.addColorStop(0, "rgba(190,205,240,0.38)"); h.addColorStop(1, "rgba(190,205,240,0)");
+  X.fillStyle = h; X.fillRect(mx - 34, my - 34, 68, 68);
+  ell(mx, my, 7.4, 7.4, "#f0efdc");
+  ell(mx - 2.2, my - 1.2, 1.7, 1.5, "rgba(170,170,155,0.5)"); ell(mx + 2.4, my + 2.2, 2.1, 1.7, "rgba(170,170,155,0.45)"); ell(mx + 0.5, my - 3.6, 1.2, 1.1, "rgba(170,170,155,0.4)");
 }
 
 function bakeBack() {
   X = backC.getContext("2d"); setW(X); X.clearRect(-1e3, -1e3, 3e3, 3e3);
   const Wd = L.Wd, rnd = mulberry32(SEED + 5);
-  // far hill and the forest on it
   X.beginPath(); X.moveTo(-6, 110);
   for (let x = -6; x <= Wd + 6; x += 1) X.lineTo(x, farY(x));
   X.lineTo(Wd + 6, 110); X.closePath();
-  const fh = X.createLinearGradient(0, 56, 0, 80); fh.addColorStop(0, "#7d90ba"); fh.addColorStop(1, "#aab8d6");
+  const fh = X.createLinearGradient(0, 62, 0, 90); fh.addColorStop(0, "#6d82b0"); fh.addColorStop(1, "#b4c2de");
   X.fillStyle = fh; X.fill();
-  for (let x = -4; x < Wd + 4; x += 1.2) {
-    const hh = 2.6 + 3.6 * rnd(), y = farY(x) + 1.2;
-    poly([x - hh * 0.28, y, x + hh * 0.28, y, x, y - hh], "#2c4868");
-    poly([x - hh * 0.12, y - hh * 0.55, x + hh * 0.12, y - hh * 0.55, x, y - hh], "#d8e2f2");
+  for (const fx of [0.05, 0.12, 0.3, 0.55]) {
+    const x = fx * Wd, hh = 14 + 8 * rnd(), y = farY(x) + 2;
+    poly([x - hh * 0.3, y, x + hh * 0.3, y, x, y - hh], "#1c3250");
+    poly([x - hh * 0.13, y - hh * 0.55, x + hh * 0.13, y - hh * 0.55, x, y - hh], "#cfdaee");
   }
-  // village ground with the church hill
-  const cxC = 0.87 * Wd;
-  const gY = (x) => 71.5 - 6.2 * Math.exp(-(((x - cxC) / 16) ** 2)) + 0.5 * Math.sin(x * 0.2);
-  X.beginPath(); X.moveTo(-6, 110);
-  for (let x = -6; x <= Wd + 6; x += 1) X.lineTo(x, gY(x));
-  X.lineTo(Wd + 6, 110); X.closePath();
-  const gg = X.createLinearGradient(0, 64, 0, 100); gg.addColorStop(0, "#a9b8d8"); gg.addColorStop(0.35, "#c3d0e8"); gg.addColorStop(1, "#dbe6f6");
-  X.fillStyle = gg; X.fill();
-  church(cxC, gY(cxC) + 1.2);
-  // snow drifts and the trodden road
-  for (let k = 0; k < 16; k++) {
-    const y = 75 + rnd() * 24, x = rnd() * Wd, len = 6 + rnd() * 16;
-    X.beginPath(); X.moveTo(x, y); X.quadraticCurveTo(x + len / 2, y - 1.4 - rnd() * 1.4, x + len, y + 0.2);
-    X.lineWidth = 0.9; X.strokeStyle = "rgba(244,248,255,0.65)"; X.stroke();
-    X.beginPath(); X.moveTo(x, y + 0.9); X.quadraticCurveTo(x + len / 2, y - 0.2, x + len, y + 1.1);
-    X.lineWidth = 0.5; X.strokeStyle = "rgba(138,156,198,0.5)"; X.stroke();
+  for (let k = 0; k < 12; k++) {
+    const y = 80 + rnd() * 16, x = rnd() * Wd, len = 8 + rnd() * 18;
+    X.beginPath(); X.moveTo(x, y); X.quadraticCurveTo(x + len / 2, y - 1.6 - rnd() * 1.6, x + len, y + 0.2);
+    X.lineWidth = 1; X.strokeStyle = "rgba(244,248,255,0.6)"; X.stroke();
   }
-  for (const off of [-0.8, 0.8]) {
-    X.beginPath();
-    for (let x = -6; x <= Wd + 6; x += 2) { const y = 86 + off + 1.6 * Math.sin(x * 0.08 + 0.5); x === -6 ? X.moveTo(x, y) : X.lineTo(x, y); }
-    X.lineWidth = 0.5; X.strokeStyle = "rgba(128,148,192,0.6)"; X.stroke();
+  // the rowan branch with snow on top and clusters of berries
+  const bark = "#33241f";
+  for (let k = 0; k < STEM.length - 1; k++) {
+    ln(STEM[k].x, STEM[k].y, STEM[k + 1].x, STEM[k + 1].y, STEM[k].w, bark);
+    ln(STEM[k].x, STEM[k].y - STEM[k].w * 0.5, STEM[k + 1].x, STEM[k + 1].y - STEM[k + 1].w * 0.5, Math.max(0.35, STEM[k].w * 0.4), "rgba(244,248,255,0.95)");
   }
-  house(HOUSES.A); house(HOUSES.B); if (HOUSES.C) house(HOUSES.C);
-  // wicker fence with clay pots on the posts
-  const fence = (x0, x1, y) => {
-    for (let x = x0; x <= x1; x += 1.3) {
-      ln(x, y, x, y - 5, 0.55, "#5e4a3a");
-      ell(x, y - 5.1, 0.55, 0.4, "#f0f4fb");
-    }
-    for (const yy of [y - 1.4, y - 3.2]) {
-      X.beginPath(); X.lineWidth = 0.5; X.strokeStyle = "#7a5e44";
-      for (let x = x0; x <= x1; x += 0.65) { const q = yy + 0.5 * Math.sin(x * 2.4); x === x0 ? X.moveTo(x, q) : X.lineTo(x, q); }
-      X.stroke();
-    }
-    for (const x of [x0 + (x1 - x0) * 0.2, x0 + (x1 - x0) * 0.7]) {
-      ell(x, y - 6.2, 1.1, 1.3, "#a9603a"); ell(x, y - 7.2, 0.7, 0.35, "#e9eef8");
-    }
-  };
-  fence(0.05 * Wd, 0.16 * Wd, 80.3);
-  fence(0.27 * Wd, 0.35 * Wd, 80.3);
-  // well
-  const w = WELL;
-  rect(w.x - 2.6, w.y - 3.6, 5.2, 3.6, "#74604c"); for (const dy of [-2.6, -1.4, -0.2]) rect(w.x - 2.6, w.y + dy, 5.2, 0.25, "#4d3d30");
-  rect(w.x - 2.9, w.y - 4.3, 5.8, 0.9, "#e9eef8");
-  ln(w.x + 1.6, w.y - 3.8, w.x + 1.6, w.y - 9.6, 0.8, "#4d3d30");
-  ln(w.x + 1.0, w.y - 9.4, w.x + 2.2, w.y - 9.4, 0.5, "#4d3d30");
+  for (const t of TWIGS) {
+    X.beginPath(); X.moveTo(t.x, t.y); X.quadraticCurveTo(t.cx, t.cy, t.ex, t.ey); X.lineWidth = t.w; X.strokeStyle = bark; X.lineCap = "round"; X.stroke();
+  }
+  for (const b of BERRIES) { ell(b.x, b.y, b.r, b.r, "#c9283a"); ell(b.x - b.r * 0.3, b.y - b.r * 0.35, b.r * 0.35, b.r * 0.3, "#ff8a8a"); }
+  for (const t of TWIGS) ell(t.ex, t.ey - 3.2, 2.2, 0.8, "rgba(244,248,255,0.9)");
 }
 
 function bakeFg() {
   X = fgC.getContext("2d"); setW(X); X.clearRect(-1e3, -1e3, 3e3, 3e3);
-  const Wd = L.Wd, rnd = mulberry32(SEED + 17);
-  // snow bank along the bottom
-  X.beginPath(); X.moveTo(-6, 110); X.lineTo(-6, 98.5);
-  for (let x = -6; x <= Wd + 6; x += 2) X.lineTo(x, 98.4 - 1.1 * Math.sin(x * 0.11) - 0.6 * Math.sin(x * 0.31 + 1));
+  const Wd = L.Wd;
+  X.beginPath(); X.moveTo(-6, 110); X.lineTo(-6, 95);
+  for (let x = -6; x <= Wd + 6; x += 2) X.lineTo(x, 94.6 - 1.4 * Math.sin(x * 0.07) - 0.8 * Math.sin(x * 0.23 + 1));
   X.lineTo(Wd + 6, 110); X.closePath(); X.fillStyle = "#e6eefa"; X.fill();
-  // bare tree on the left with snow on its branches
-  TIPS = [];
-  const tree = (x, y, a, len, w, depth) => {
-    const x2 = x + Math.cos(a) * len, y2 = y + Math.sin(a) * len;
-    ln(x, y, x2, y2, w, "#2a1e1e");
-    if (Math.abs(Math.cos(a)) > 0.3 && depth > 0) ln(x, y - w * 0.45, x2, y2 - w * 0.45, Math.max(0.3, w * 0.45), "rgba(244,248,255,0.95)");
-    if (depth >= 5) { if (y2 < 70) TIPS.push({ x: x2, y: y2 - 0.4 }); return; }
-    const n = depth === 0 ? 3 : 2;
-    for (let k = 0; k < n; k++) {
-      const da = (k - (n - 1) / 2) * (0.5 + rnd() * 0.4) + (rnd() - 0.5) * 0.3;
-      tree(x2, y2, a + da, len * (0.7 + rnd() * 0.12), w * 0.66, depth + 1);
-    }
-  };
-  tree(0.05 * Wd, 99.5, -Math.PI / 2, 17, 2.6, 0);
-  // spruce on the right
-  const sx = 0.96 * Wd;
-  for (let k = 0; k < 7; k++) {
-    const y = 99 - k * 4.6, w = 11 - k * 1.4;
-    poly([sx - w, y, sx + w, y, sx, y - 9], "#16383a");
-    poly([sx - w * 0.62, y - 3.4, sx + w * 0.62, y - 3.4, sx, y - 9], "#e9eef8");
-    poly([sx - w * 0.5, y - 3.9, sx + w * 0.5, y - 3.9, sx, y - 9.4], "#1d4a46");
-  }
-  poly([sx - 0.2, 99, sx + 0.2, 99, sx, 60], "#16383a");
 }
 
 function bakeAll() {
@@ -464,403 +360,86 @@ function bakeAll() {
   X = S; setW(X);
 }
 
-// ---------- people, animals, vehicles ----------
-function person(o) {
-  const s = o.s, w = o.walk || 0, ph = o.ph || 0;
-  const bob = -Math.abs(Math.sin(ph)) * 0.4 * w;
-  X.save(); X.translate(o.x, o.y);
-  if (o.rot) X.rotate(o.rot * o.dir);
-  X.scale(o.dir * s, s); X.translate(0, bob);
-  if (o.alpha !== undefined) X.globalAlpha = o.alpha;
-  const boot = "#5a4030", cc = o.coat;
-  if (!o.sit) {
-    for (const k of [0, 1]) {
-      const a = Math.sin(ph + k * Math.PI) * w, hx = k ? 0.6 : -0.4;
-      ln(hx, -5.4, hx + a * 2.0, -0.4 - Math.max(0, Math.cos(ph + k * Math.PI)) * 0.7 * w, 1.5, boot);
-    }
-  } else {
-    ln(0.4, -2.0, 3.4, -2.0, 1.4, boot); ln(3.4, -2.0, 3.6, 0.2, 1.3, boot);
-  }
-  const hem = o.skirt ? -3.4 : -5.4;
-  if (o.skirt) poly([-3.3, hem, 3.3, hem, 1.9, -10.6, -1.9, -10.6], cc);
-  else poly([-2.4, hem, 2.4, hem, 1.9, -10.6, -1.9, -10.6], cc);
-  if (o.trim) ln(-(o.skirt ? 3.3 : 2.4), hem, o.skirt ? 3.3 : 2.4, hem, 1.0, o.trim);
-  ln(-2.0, -7.7, 2.0, -7.7, 0.75, o.belt || "#b32d2d");
-  const sa = Math.sin(ph) * 0.7 * w;
-  if (o.arms === "up") { ln(0.8, -10, 2.8, -13.6, 1.25, cc); ln(-0.6, -10, -2.4, -13.8, 1.25, cc); }
-  else if (o.arms === "carry") { ln(0.6, -10, 2.0, -8.0, 1.25, cc); ln(-0.4, -10, 1.2, -8.2, 1.25, cc); }
-  else { ln(0.5, -10, 1.0 + sa, -7.6, 1.25, cc); ln(-0.3, -10, -0.6 - sa, -7.6, 1.25, cc); }
-  const skin = "#e2b896";
-  ell(0.2, -12.2, 1.5, 1.65, skin);
-  switch (o.hat) {
-    case "fur": ell(0.1, -13.2, 2.0, 1.25, "#34261f"); ell(0.2, -12.5, 1.7, 0.5, "#34261f"); break;
-    case "cap": ell(0.1, -13.2, 1.8, 0.95, "#3a4a6a"); ln(0.2, -12.7, 2.1, -12.7, 0.5, "#2a3650"); break;
-    case "kerch":
-      ell(0, -12.7, 1.8, 1.55, "#c8323c"); ell(-0.2, -12.9, 1.0, 0.8, "#e8d8a8");
-      poly([-1.7, -12.4, -2.9, -11.1, -1.2, -11.4], "#c8323c");
-      break;
-    case "wreath":
-      ell(-0.2, -12.6, 1.5, 1.7, "#2c2020");
-      ell(0.2, -12.2, 1.4, 1.5, skin);
-      for (let k = 0; k < 6; k++) { const a = Math.PI + (k / 5) * Math.PI; ell(0.1 + Math.cos(a) * 1.7, -13.1 + Math.sin(a) * 1.3, 0.55, 0.55, ["#e84a64", "#f0c24a", "#4a82d8"][k % 3]); }
-      ln(-1.4, -12.6, -2.6 + Math.sin(ph) * 0.3, -8.6, 0.45, "#e84a64"); ln(-1.0, -12.6, -1.8, -8.4, 0.45, "#4a82d8"); ln(-1.7, -12.6, -3.0, -9.0, 0.45, "#f0c24a");
-      break;
-    case "goat":
-      ell(0.7, -12.5, 2.4, 2.0, "#7a5230");
-      ln(0.2, -14.1, -1.2, -16.6, 0.65, "#e8dfc8"); ln(1.4, -14.1, 2.5, -16.7, 0.65, "#e8dfc8");
-      ln(2.3, -11.6, 2.5, -9.6, 0.5, "#e8dfc8"); ell(2.5, -12.2, 0.35, 0.3, "#1a1210");
-      break;
-  }
-  if (o.yoke) {
-    ln(-3.8, -10.2, 3.8, -10.2, 0.7, "#6a4c34");
-    for (const side of [-1, 1]) {
-      const bx = side * 3.8 + Math.sin(ph * 0.5 + side) * 0.4 * (w + 0.2);
-      ln(side * 3.8, -10.1, bx, -5.4, 0.25, "#6a4c34");
-      poly([bx - 1.3, -5.4, bx + 1.3, -5.4, bx + 1.0, -3.2, bx - 1.0, -3.2], "#7a5636");
-      rect(bx - 1.3, -5.4, 2.6, 0.5, "#6fa6e0");
-    }
-  }
-  X.restore();
-}
-
-function horse(x, y, dir, s, ph) {
-  X.save(); X.translate(x, y); X.scale(dir * s, s);
-  const body = "#5a3828", dark = "#3c261c";
-  const leg = (hx, off) => {
-    const a = Math.sin(ph + off) * 0.7, lift = Math.max(0, Math.cos(ph + off));
-    ln(hx, -7, hx + a * 1.2, -3.9, 1.1, body);
-    ln(hx + a * 1.2, -3.9, hx + a * 2.4, -0.5 - lift * 1.5, 0.9, dark);
-  };
-  leg(-3.8, Math.PI); leg(3.6, 0); leg(-4.8, 0); leg(2.6, Math.PI);
-  ln(-5, -9.2, -7.6, -5.4 + Math.sin(ph * 0.7) * 0.6, 1.0, dark);
-  ell(0, -8.4, 5.4, 2.8, body);
-  poly([3.6, -9.6, 6.0, -13.4, 7.6, -12.6, 5.6, -8.4], body);
-  ell(8.5, -12.9, 1.9, 1.0, "#4a2e22", 0.5);
-  poly([7.4, -13.7, 7.9, -15.2, 8.5, -13.8], dark);
-  ln(3.8, -10.4, 6.0, -13.6, 0.9, dark);
-  ell(4.6, -10.4, 1.2, 2.2, "#b0343c", -0.5);
-  for (let k = 0; k < 3; k++) ell(3.9 + k * 0.1, -8.6 + k * 0.9, 0.35, 0.35, "#f0c24a");
-  X.restore();
-}
-
-function sleigh(x, y, dir, s, ph) {
-  X.save(); X.translate(x, y); X.scale(dir * s, s);
-  ln(2.8, -7.4, -12.4, -4.2, 0.55, "#4a3426"); ln(3.4, -6.6, -12.4, -3.6, 0.55, "#4a3426");
-  X.beginPath(); X.moveTo(-9.0, -2.4); X.quadraticCurveTo(-8.6, -0.2, -11, -0.3); X.lineTo(-22, -0.3); X.lineWidth = 0.8; X.strokeStyle = "#2c201c"; X.stroke();
-  ln(-12.6, -3.2, -12.4, -0.4, 0.5, "#2c201c"); ln(-20.6, -3.2, -20.8, -0.4, 0.5, "#2c201c");
-  poly([-22.6, -3.2, -11.0, -3.2, -9.8, -6.8, -11.6, -7.2, -22.8, -6.2], "#982c34");
-  ln(-22.2, -4.6, -11, -4.6, 0.8, "#2d5aa4");
-  poly([-22.8, -6.2, -23.4, -10.4, -21.4, -10.2, -21.2, -6.2], "#8a2830");
-  // riders: a coachman and a girl wrapped in sheepskin
-  const sit = (bx, hat, coat) => {
-    poly([bx - 1.4, -6.3, bx + 1.4, -6.3, bx + 1.1, -11.4, bx - 1.1, -11.4], coat);
-    ell(bx + 0.1, -12.7, 1.4, 1.5, "#e2b896");
-    if (hat === "fur") { ell(bx, -13.7, 1.9, 1.15, "#34261f"); } else { ell(bx, -13.0, 1.7, 1.45, "#c8323c"); }
-  };
-  sit(-14.4, "fur", "#c9a878"); sit(-19.6, "kerch", "#d8c8a4");
-  ell(-17.2, -7.0, 6.2, 1.4, "#e6dfd0");
-  ln(-13.2, -10, 3.2, -10.4, 0.2, "#2a2018");
-  ell(-9.6, -8.2, 0.6, 0.6, "#ffd87a");
-  X.restore();
-}
-
-function bird(b) {
-  X.save(); X.translate(b.x, b.y); X.scale(b.dir * 1.15, 1.15);
-  const fl = b.flying;
-  poly([-1.5, 0.1, -3.7, 0.9 + (fl ? Math.sin(b.ph * 3) * 0.5 : 0), -3.6, -0.3, -1.5, -0.5], "#1c1c24");
-  ell(0, 0, 1.9, 1.25, "#7a8094");
-  ell(0.8, 0.45, 1.2, 0.95, "#e0465a");
-  ell(1.9, -0.55, 0.95, 0.9, "#14141a");
-  poly([2.7, -0.7, 3.5, -0.4, 2.7, -0.2], "#2a2a2a");
-  if (fl) { const k = Math.sin(b.ph * 3); ln(-0.2, -0.5, -1.2, -2.1 * k - 0.4, 0.8, "#3a3f52"); ln(0.4, -0.5, 1.0, -2.0 * k - 0.4, 0.8, "#4a4f62"); }
-  else ell(-0.5, -0.2, 1.2, 0.55, "#3a3f52");
-  X.restore();
-}
-
-function star8(x, y, r, spin, t) {
+function star8(x, y, r, spin) {
   X.save(); X.translate(x, y);
   const sx = 0.2 + 0.8 * Math.abs(Math.cos(spin));
   X.scale(sx, 1);
-  const face = Math.cos(spin) > 0;
-  const pts = [];
+  const face = Math.cos(spin) > 0, pts = [];
   for (let k = 0; k < 16; k++) { const rr = k % 2 ? r * 0.45 : r; const a = (k / 16) * TAU - Math.PI / 2; pts.push(Math.cos(a) * rr, Math.sin(a) * rr); }
   poly(pts, face ? "#ffd04a" : "#e8483c");
   ell(0, 0, r * 0.3, r * 0.3, face ? "#c8323c" : "#ffe08a");
   X.restore();
 }
 
-// ---------- particles, notes, birds, footprints ----------
-let time = 0;
-let puffs = [], smoke = [], notes = [], steps = [], birds = [];
-let nextBirdAt = 7;
-const puff = (x, y, n, spread, up = 2) => { for (let k = 0; k < n; k++) puffs.push({ x: x + (Math.random() - 0.5) * 2, y, vx: (Math.random() - 0.5) * spread, vy: -Math.random() * up, r: 0.5 + Math.random() * 0.7, life: 1 }); };
-const note = (x, y, ch, rgb) => notes.push({ x, y, vx: (Math.random() - 0.5) * 2.2, vy: -3.5 - Math.random() * 1.5, ch, rgb, life: 1 });
-const footprint = (x, y) => steps.push({ x, y, life: 1 });
-
-function walkerStep(o, speed, dt) {
-  const before = Math.floor(o.ph / Math.PI);
-  o.ph += speed * 1.45 * dt;
-  if (speed > 0.2 && Math.floor(o.ph / Math.PI) !== before) footprint(o.x, o.y);
+function bird(b) {
+  X.save(); X.translate(b.x, b.y); X.scale(b.dir * b.s, b.s);
+  const fl = b.flying, pk = b.peck > 0 ? Math.sin(b.peck * Math.PI) : 0;
+  if (!fl) X.rotate(pk * 0.45);
+  const k = Math.sin(b.ph);
+  poly([-1.5, 0.1, -4.2, 0.9 + (fl ? k * 0.6 : 0), -4.1, -0.4, -1.5, -0.6], "#15151c");
+  ell(0, 0, 2.1, 1.35, "#aab2c8");
+  ell(0.9, 0.55, 1.45, 1.1, "#f0506a");
+  ell(2.1, -0.6, 1.05, 1.0, "#14141a");
+  poly([3.0, -0.8, 3.9, -0.45, 3.0, -0.2], "#2a2a2a");
+  ell(2.3, -0.8, 0.18, 0.18, "#fff");
+  if (fl) { ln(-0.2, -0.6, -1.4, -2.6 * k - 0.4, 0.9, "#3a3f52"); ln(0.5, -0.6, 1.3, -2.4 * k - 0.4, 0.9, "#4a4f62"); }
+  else { ell(-0.6, -0.2, 1.4, 0.65, "#4a5068"); ln(-1.6, -0.1, 0.4, -0.1, 0.25, "#e8ecf4"); }
+  if (!fl) { ln(-0.2, 1.1, -0.3, 1.9, 0.3, "#2a2a2a"); ln(0.5, 1.1, 0.6, 1.9, 0.3, "#2a2a2a"); }
+  X.restore();
 }
 
-// ---------- the director and the scenes ----------
-const cap = { text: "", t0: -99, dur: 0 };
-const setCap = (text, dur) => { cap.text = text; cap.t0 = time; cap.dur = dur; };
-let hint = { until: 22 };
-let current = null;
-let waitUntil = 5;
-const ORDER = ["koliada", "sleigh", "woman", "kids"];
-let orderIdx = Math.max(0, ORDER.indexOf(QS.get("event")));
-
-function routeInfo(pts) {
-  const cum = [0];
-  for (let k = 1; k < pts.length; k++) cum.push(cum[k - 1] + Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]));
-  return { pts, cum, total: cum[cum.length - 1] };
-}
-function onRoute(r, d) {
-  d = clamp(d, 0, r.total);
-  let k = 1;
-  while (k < r.pts.length - 1 && r.cum[k] < d) k++;
-  const a = r.pts[k - 1], b = r.pts[k], t = (d - r.cum[k - 1]) / ((r.cum[k] - r.cum[k - 1]) || 1);
-  return { x: lerp(a[0], b[0], t), y: lerp(a[1], b[1], t), dx: b[0] - a[0] };
-}
-
-const LYRICS = ["Щедрик, щедрик, щедрівочка,", "прилетіла ластівочка,", "стала собі щебетати,", "господаря викликати:", "вийди, вийди, господарю,", "подивися на кошару."];
-
-function sceneKoliada() {
-  const B = HOUSES.B, dr = B.door, Wd = L.Wd;
-  const route = routeInfo([[-18, 90], [B.cx - 12, 89.5], [dr.x - 4.2, 84.2], [dr.x + 7, 85.5], [Wd + 18, 89]]);
-  const stopD = route.cum[2];
-  const crew = [
-    { coat: "#c9a878", trim: "#f0e8d6", hat: "fur", star: true },
-    { coat: "#3f6fb4", trim: "#f0e8d6", hat: "wreath", skirt: true, belt: "#e8c24a" },
-    { coat: "#d9cdb2", trim: "#8a6a44", hat: "goat" },
-    { coat: "#6e4a32", trim: "#3a2a20", hat: "cap", bag: true },
-    { coat: "#8a3a52", trim: "#f0e8d6", hat: "kerch", skirt: true },
-  ].map((c, k) => Object.assign({ ph: k * 1.3, dir: 1, x: 0, y: 0, s: 1, walk: 1 }, c));
-  const st = { D: 0, state: "in", t: 0, huddle: 0, bun: null, hosted: false, lyric: -1, noteAt: 0 };
-  setCap("Святвечір. Колядники йдуть до хати", 6);
-  const hands = (o) => ({ x: o.x + o.dir * o.s * 1.9, y: o.y - 8.2 * o.s });
-  return {
-    update(dt) {
-      st.t += dt;
-      const speed = 6.4;
-      let moving = 0;
-      if (st.state === "in") { st.D += speed * dt; moving = 1; if (st.D >= stopD) { st.D = stopD; st.state = "sing"; st.t = 0; } }
-      else if (st.state === "sing") {
-        if (st.t > 12.8) { st.state = "out"; st.t = 0; }
-      } else { st.D += speed * dt; moving = 1; }
-      st.huddle = clamp(st.huddle + (st.state === "sing" ? dt : -dt), 0, 1);
-      const sp = lerp(3.5, 1.9, smooth(st.huddle));
-      crew.forEach((o, k) => {
-        const p = onRoute(route, st.D - k * sp);
-        const lag = k * sp > st.D;
-        const sw = moving && !lag ? 1 : 0;
-        o.x = p.x; o.y = p.y; o.s = depthScale(o.y) * (o.hat === "kerch" ? 0.88 : 1);
-        o.dir = st.state === "sing" ? 1 : p.dx >= 0 ? 1 : -1;
-        o.walk += (sw - o.walk) * Math.min(1, dt * 6);
-        walkerStep(o, sw ? speed : 0, dt);
-      });
-      if (st.state === "sing") {
-        if (st.t > 0.6 && st.t < 11.5) {
-          const li = Math.floor((st.t - 0.6) / 1.9);
-          if (li !== st.lyric && li < LYRICS.length) { st.lyric = li; setCap(LYRICS[li], 1.9); }
-          if (time > st.noteAt) { st.noteAt = time + 0.4; const o = crew[(Math.random() * crew.length) | 0]; note(o.x, o.y - 15 * o.s, Math.random() < 0.5 ? 0x266a : 0x266b, "255,214,120"); }
-        }
-        dr.open = clamp((st.t - 0.8) / 1.4, 0, 1) * (st.t > 11.6 ? clamp(1 - (st.t - 11.6) / 1.1, 0, 1) : 1);
-        if (st.t > 9.6 && !st.bun) { const a = hands({ x: dr.x, y: dr.x, dir: 1, s: 0.8 }); st.bun = { t: 0, x0: dr.x, y0: B.base - 4.4, x1: crew[0].x + 1.4, y1: crew[0].y - 7 }; }
-      } else if (st.state === "out") dr.open = 0;
-      if (st.bun) st.bun.t += dt * 1.4;
-      if (st.state === "out" && st.D - (crew.length - 1) * sp > route.total + 4) { dr.open = 0; return true; }
-      return false;
-    },
-    draw() {
-      const star = crew[0], h = hands(star);
-      const sorted = crew.slice().sort((a, b) => a.y - b.y);
-      this.hostDraw();
-      for (const o of sorted) {
-        person(Object.assign({}, o, { arms: o.star ? "carry" : undefined }));
-        if (o.bag) { ell(o.x - o.dir * o.s * 2.3, o.y - 8.6 * o.s, 1.9 * o.s, 2.4 * o.s, "#8a6a44"); ln(o.x - o.dir * o.s * 0.4, o.y - 10.4 * o.s, o.x - o.dir * o.s * 2.2, o.y - 10.2 * o.s, 0.5 * o.s, "#5a4430"); }
-      }
-      ln(h.x, h.y, h.x, h.y - 10.5 * star.s, 0.5 * star.s, "#5a4430");
-      const sy = h.y - 12.8 * star.s;
-      glow(h.x, sy, 20, "255,196,90", 0.3 + 0.06 * Math.sin(time * 5));
-      star8(h.x, sy, 3.6 * star.s, time * 1.7, time);
-      for (let k = 0; k < 3; k++) ln(h.x, h.y - 10.6 * star.s, h.x + (k - 1) * 1.1 * star.s, h.y - 8.4 * star.s, 0.3 * star.s, ["#c8323c", "#2d5aa4", "#f0c24a"][k]);
-      if (st.bun) {
-        const b = st.bun, t = clamp(b.t, 0, 1);
-        if (t < 1) ell(lerp(b.x0, b.x1, t), lerp(b.y0, b.y1, t) - Math.sin(t * Math.PI) * 4, 0.8, 0.7, "#d8a860");
-      }
-    },
-    hostDraw() {
-      const o = dr.open;
-      if (o <= 0.01) return;
-      const wd = dr.w * o;
-      rect(dr.x - dr.w / 2, B.base - dr.h, dr.w, dr.h, "#ffc860");
-      if (o > 0.4) person({ x: dr.x, y: B.base - 0.3, s: 0.78, dir: 1, ph: 0, walk: 0, coat: "#7a2c3c", trim: "#f0e8d6", hat: "kerch", skirt: true, arms: o > 0.9 && st.state === "sing" ? "up" : undefined });
-      rect(dr.x + dr.w / 2 - wd, B.base - dr.h, wd * 0.45, dr.h, "#59402c");
-      X.save(); X.globalCompositeOperation = "lighter";
-      const g = X.createLinearGradient(dr.x, B.base, dr.x - 4, B.base + 11);
-      g.addColorStop(0, `rgba(255,190,90,${0.42 * o})`); g.addColorStop(1, "rgba(255,190,90,0)");
-      X.fillStyle = g; poly([dr.x - dr.w / 2, B.base, dr.x + dr.w / 2, B.base, dr.x + dr.w / 2 + 3, B.base + 12, dr.x - dr.w / 2 - 7, B.base + 12], g);
-      X.restore();
-    },
-  };
-  function st_() { return st; }
-}
-
-function sceneSleigh() {
-  const Wd = L.Wd, st = { x: Wd + 14, ph: 0, sp: 11.5, last: 0 };
-  setCap("Сани з бубонцями на вечірній дорозі", 6);
-  return {
-    update(dt) {
-      st.x -= st.sp * dt; st.ph += dt * 12;
-      if (time - st.last > 0.09) { st.last = time; puff(st.x - 10.5, 85.7, 1, 4, 2.5); puff(st.x + 21, 85.4, 1, 3, 1.8); }
-      if (Math.floor(st.ph / TAU * 2) !== Math.floor((st.ph - dt * 12) / TAU * 2)) puff(st.x - 11, 85.7, 2, 3, 1.6);
-      return st.x < -26;
-    },
-    draw() {
-      const s = 0.95, y = 85.6;
-      sleigh(st.x, y, -1, s, st.ph); horse(st.x, y, -1, s, st.ph);
-      glow(st.x + 9.6 * s, y - 8.2 * s, 6, "255,210,110", 0.3);
-    },
-  };
-}
-
-function sceneWoman() {
-  const A = HOUSES.A, Wd = L.Wd;
-  const route1 = routeInfo([[-12, 88], [WELL.x - 12, 86], [WELL.x - 4.4, 82.2]]);
-  const route2 = routeInfo([[WELL.x - 4.4, 82.2], [A.door.x + 12, 84.5], [A.door.x + 1, 76.6]]);
-  const st = { state: "in", D: 0, t: 0 };
-  const w = { x: 0, y: 0, s: 1, dir: 1, ph: 0, walk: 1, coat: "#c6a06c", trim: "#f0e8d6", hat: "kerch", skirt: true, belt: "#b32d2d" };
-  setCap("По воду. Журавель скрипить на морозі", 6);
-  return {
-    update(dt) {
-      st.t += dt;
-      const speed = 5.2;
-      let moving = 0;
-      if (st.state === "in") { st.D += speed * dt; moving = 1; if (st.D >= route1.total) { st.state = "draw"; st.t = 0; st.D = route1.total; } }
-      else if (st.state === "draw") { WELL.a = 0.62 - 0.67 * Math.sin(clamp(st.t / 2.6, 0, 1) * Math.PI) * (st.t < 2.6 ? 1 : 0); if (st.t > 2.6) WELL.a = lerp(0.62, 0.62, 1); if (st.t > 3.6) { st.state = "home"; st.t = 0; st.D = 0; WELL.a = 0.62; } }
-      else if (st.state === "home") { st.D += speed * 0.8 * dt; moving = 1; if (st.D >= route2.total) { st.state = "door"; st.t = 0; } }
-      else { A.door.open = clamp(st.t / 0.9, 0, 1) * (st.t > 2.6 ? clamp(1 - (st.t - 2.6) / 0.8, 0, 1) : 1); if (st.t > 3.5) { A.door.open = 0; return true; } }
-      const r = st.state === "in" ? route1 : route2;
-      const p = onRoute(r, st.D);
-      w.x = p.x; w.y = p.y; w.s = depthScale(w.y);
-      w.dir = st.state === "draw" ? 1 : p.dx >= 0 ? 1 : -1;
-      w.walk += (moving - w.walk) * Math.min(1, dt * 6);
-      walkerStep(w, moving ? speed : 0, dt);
-      w.yoke = st.state === "home" || st.state === "door";
-      w.arms = st.state === "draw" ? "up" : undefined;
-      w.alpha = st.state === "door" ? clamp(1 - st.t / 1.6, 0, 1) : 1;
-      return false;
-    },
-    draw() {
-      if (A.door.open > 0.01) {
-        const d = A.door; rect(d.x - d.w / 2, A.base - d.h, d.w, d.h, "#ffc860");
-      }
-      if (w.alpha > 0.02) person(w);
-    },
-  };
-}
-
-function sceneKids() {
-  const Wd = L.Wd, top = { x: 0.3 * Wd, y: 80 }, bot = { x: 0.74 * Wd, y: 95.5 };
-  const st = { state: "climb", t: 0, k: 0, ph: 0 };
-  const mkKid = (coat, hat, skirt) => ({ x: 0, y: 0, s: 0.7, dir: -1, ph: Math.random() * 3, walk: 1, coat, trim: "#f0e8d6", hat, skirt });
-  const k1 = mkKid("#c8483c", "cap"), k2 = mkKid("#3f78c0", "kerch", true);
-  setCap("Дітвора на санчатах", 6);
-  const sled = (x, y, dir, s) => {
-    X.save(); X.translate(x, y); X.scale(dir * s, s);
-    X.beginPath(); X.moveTo(-4.2, -0.5); X.lineTo(3.4, -0.5); X.quadraticCurveTo(5.2, -0.4, 4.6, -2.2); X.lineWidth = 0.55; X.strokeStyle = "#2c201c"; X.stroke();
-    ln(-3, -0.5, -3, -1.8, 0.4, "#2c201c"); ln(2.2, -0.5, 2.2, -1.8, 0.4, "#2c201c");
-    rect(-4.2, -2.4, 8.2, 0.8, "#a8483a");
-    X.restore();
-  };
-  return {
-    update(dt) {
-      st.t += dt;
-      const dur = { climb: 9, slide: 3.4, wave: 3.2, leave: 5 }[st.state];
-      const u = clamp(st.t / dur, 0, 1);
-      let x, y, dir, sw = 0;
-      if (st.state === "climb") { x = lerp(bot.x, top.x, u); y = lerp(bot.y, top.y, u); dir = -1; sw = 1; walkerStep(k1, 3.6, dt); walkerStep(k2, 3.6, dt); }
-      else if (st.state === "slide") { const e = u * u * (3 - 2 * u * 0.6); x = lerp(top.x, bot.x, e); y = lerp(top.y, bot.y, e); dir = 1; if (Math.random() < 0.6) puff(x - 3, y, 1, 4, 2); }
-      else if (st.state === "wave") { x = bot.x; y = bot.y; dir = 1; if (Math.random() < dt * 5) note(x + (Math.random() - 0.5) * 6, y - 11, 33, "255,240,200"); }
-      else { x = bot.x + u * (L.Wd + 20 - bot.x); y = bot.y; dir = 1; sw = 1; walkerStep(k1, 3.8, dt); walkerStep(k2, 3.8, dt); }
-      st.x = x; st.y = y; st.dir = dir; st.sw = sw;
-      if (u >= 1) {
-        const next = { climb: "slide", slide: "wave", wave: "leave" }[st.state];
-        if (!next) return true;
-        st.state = next; st.t = 0;
-        if (next === "slide") setCap("Вниз зі схилу, аж дух захоплює", 3);
-        if (next === "wave") setCap("Ще раз!", 3);
-      }
-      return false;
-    },
-    draw() {
-      const { x, y, dir } = st, s = depthScale(y);
-      if (st.state === "slide" || st.state === "wave") {
-        sled(x, y, dir, s);
-        const lie = st.state === "wave";
-        person(Object.assign({}, k1, { x: x - dir * 1.6 * s, y: y - 1.6 * s, dir, s: 0.7 * s, sit: true, walk: 0, arms: "up", rot: lie ? 0 : 0 }));
-        person(Object.assign({}, k2, { x: x + dir * 1.0 * s, y: y - 1.6 * s, dir, s: 0.62 * s, sit: true, walk: 0, arms: "up" }));
-      } else {
-        const back = st.state === "climb" ? -1 : 1;
-        sled(x + back * dir * 0 + (st.state === "climb" ? 6 : -5), y + 0.6, dir, s);
-        const rope = st.state === "climb" ? 6 : -5;
-        person(Object.assign({}, k1, { x: x, y, dir, s: 0.7 * s, walk: st.sw }));
-        person(Object.assign({}, k2, { x: x + dir * -2.6 * s, y: y + 0.4, dir, s: 0.64 * s, walk: st.sw }));
-        ln(x + dir * 1.4 * s, y - 5 * s, x + rope * 1, y - 1.6 * s, 0.25, "#6a4c34");
-      }
-    },
-  };
-}
-const SCENES = { koliada: sceneKoliada, sleigh: sceneSleigh, woman: sceneWoman, kids: sceneKids };
+const puff = (x, y, n, spread, up = 2) => { for (let k = 0; k < n; k++) puffs.push({ x: x + (Math.random() - 0.5) * 2, y, vx: (Math.random() - 0.5) * spread, vy: -Math.random() * up, r: 0.5 + Math.random() * 0.8, life: 1 }); };
+const spark = (x, y) => notes.push({ x, y, vx: -2 - Math.random() * 3, vy: 1 + Math.random() * 2.4, ch: [46, 42, 43, 39][(Math.random() * 4) | 0], rgb: "255,214,120", life: 1, d: 0.9 });
 
 // ---------- simulation ----------
 function update(dt) {
   time += dt;
+  const Wd = L.Wd;
   for (const f of FLAKES) {
     f.y += (3.5 + 9 * f.z) * dt;
     f.x += (Math.sin(time * 0.55 + f.ph) * 2.6 + 1.2) * f.z * dt;
-    if (f.y > 102) { f.y = Y0 - 2; f.x = Math.random() * (L.Wd + 10) - 5; }
-    if (f.x > L.Wd + 6) f.x = -5;
+    if (f.y > 102) { f.y = -2; f.x = Math.random() * (Wd + 10) - 5; }
+    if (f.x > Wd + 6) f.x = -5;
   }
-  if (current) { if (current.update(dt)) { current = null; waitUntil = time + 6 + Math.random() * 4; } }
-  else if (time > waitUntil) { current = SCENES[ORDER[orderIdx % ORDER.length]](); orderIdx++; }
-  // chimney smoke
-  for (const h of Object.values(HOUSES)) if (Math.random() < dt * 5) smoke.push({ x: h.smoke.x + (Math.random() - 0.5), y: h.smoke.y, vx: 1.6 + Math.random(), vy: -3.2 - Math.random(), r: 0.6, life: 1 });
-  for (const p of smoke) { p.x += p.vx * dt; p.y += p.vy * dt; p.r += dt * 0.55; p.life -= dt * 0.24; p.vx += dt * 0.3; }
-  smoke = smoke.filter((p) => p.life > 0);
-  for (const p of puffs) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 4 * dt; p.life -= dt * 1.5; }
-  puffs = puffs.filter((p) => p.life > 0);
-  for (const p of notes) { p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt * 0.55; }
-  notes = notes.filter((p) => p.life > 0);
-  for (const p of steps) p.life -= dt / 26;
-  steps = steps.filter((p) => p.life > 0);
-  // bullfinches visit the bare tree
-  if (time > nextBirdAt && birds.length < 3 && TIPS.length) {
-    const free = TIPS.filter((t) => !birds.some((b) => b.tip === t));
-    if (free.length) {
-      const tip = free[(Math.random() * free.length) | 0];
-      birds.push({ tip, x: L.Wd + 6, y: Y0 + 4 + Math.random() * 14, x0: L.Wd + 6, y0: Y0 + 4 + Math.random() * 14, dir: -1, ph: 0, t: 0, state: "in", flying: true, stay: 7 + Math.random() * 10 });
-    }
-    nextBirdAt = time + 4 + Math.random() * 7;
+  // the carol star drifts across the sky, scattering sparks
+  if (!star.active) { star.wait -= dt; if (star.wait <= 0) { star.active = true; star.x = -12; setCap("Колядна зірка пливе над полем", 6); } }
+  else {
+    star.x += (Wd + 24) / 60 * dt; star.y = 16 + 7 * Math.sin(star.x * 0.045);
+    if (time - star.spark > 0.05) { star.spark = time; spark(star.x - 3 + Math.random() * 2, star.y + (Math.random() - 0.5) * 6); }
+    if (star.x > Wd + 12) { star.active = false; star.wait = 8 + Math.random() * 6; }
   }
+  const free = () => { const f = PERCHES.filter((p) => !p.taken); return f.length ? f[(Math.random() * f.length) | 0] : null; };
   for (const b of birds) {
-    b.t += dt; b.ph += dt * 7;
-    if (b.state === "in") {
-      const u = clamp(b.t / 3.6, 0, 1), e = 1 - (1 - u) * (1 - u);
-      b.x = lerp(b.x0, b.tip.x, e); b.y = lerp(b.y0, b.tip.y, e) - Math.sin(u * Math.PI) * 5;
-      if (u >= 1) { b.state = "sit"; b.t = 0; b.flying = false; b.dir = -1; }
+    b.t += dt;
+    if (b.state === "wait") {
+      b.ph += dt * 3;
+      if (b.t > b.wait) {
+        const p = free();
+        if (p) { p.taken = b; b.perch = p; b.from = { x: b.x, y: b.y }; b.state = "fly"; b.t = 0; b.dur = Math.max(1.6, Math.hypot(p.x - b.x, p.y - b.y) / 30); b.flying = true; b.dir = p.x < b.x ? -1 : 1; }
+        else b.t = 0;
+      }
+    } else if (b.state === "fly") {
+      b.ph += dt * 16;
+      const u = clamp(b.t / b.dur, 0, 1), e = 1 - Math.pow(1 - u, 2.2), p = b.perch;
+      b.x = lerp(b.from.x, p.x, e); b.y = lerp(b.from.y, p.y - 1.5 * b.s, e) - Math.sin(u * Math.PI) * 6;
+      if (u >= 1) { b.state = "sit"; b.t = 0; b.flying = false; b.stay = 4 + Math.random() * 9; b.peck = 0; puff(p.x, p.y - 1, 7, 6, 3); }
     } else if (b.state === "sit") {
-      if (Math.sin(b.t * 2.3 + b.stay) > 0.96) b.dir = -b.dir;
-      b.y = b.tip.y - Math.abs(Math.sin(b.t * 1.1)) * (Math.sin(b.t * 0.4) > 0.8 ? 0.8 : 0);
-      if (b.t > b.stay) { b.state = "out"; b.t = 0; b.flying = true; b.dir = -1; b.x0 = b.x; b.y0 = b.y; }
+      b.ph += dt * 2;
+      if (!b.peck && Math.random() < dt * 0.6) b.peck = 0.0001;
+      if (b.peck) { b.peck += dt * 2.4; if (b.peck > 1) b.peck = 0; }
+      if (Math.random() < dt * 0.15) b.dir = -b.dir;
+      if (b.t > b.stay) { b.perch.taken = null; b.state = "leave"; b.t = 0; b.flying = true; b.from = { x: b.x, y: b.y }; b.to = { x: -10 - Math.random() * 20, y: -6 - Math.random() * 14 }; b.dur = 4.4; b.dir = -1; puff(b.perch.x, b.perch.y - 1, 8, 7, 3); }
     } else {
-      const u = b.t / 3.2; b.x = b.x0 - 34 * u; b.y = b.y0 - 24 * u * u - 6 * u;
+      b.ph += dt * 16;
+      const u = clamp(b.t / b.dur, 0, 1), e = u * u;
+      b.x = lerp(b.from.x, b.to.x, e); b.y = lerp(b.from.y, b.to.y, e) - Math.sin(u * Math.PI) * 5;
+      if (u >= 1) { b.state = "wait"; b.t = 0; b.wait = 1 + Math.random() * 6; b.x = Wd + 12; b.y = 6 + Math.random() * 34; b.dir = -1; }
     }
   }
-  birds = birds.filter((b) => !(b.state === "out" && b.t > 3.2));
+  for (const p of puffs) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 4 * dt; p.life -= dt * 1.4; }
+  puffs = puffs.filter((p) => p.life > 0);
+  for (const p of notes) { p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt * (p.d || 0.55); }
+  notes = notes.filter((p) => p.life > 0);
   if (clr) { for (let i = 0; i < clr.length; i++) if (clr[i] > 0) clr[i] = Math.max(0, clr[i] - dt * 0.022); }
 }
 
@@ -872,32 +451,16 @@ function drawScene() {
   blit(skyC);
   for (const s of STARS) {
     const tw = 0.55 + 0.45 * Math.sin(time * (1.2 + s.s) + s.ph);
-    S.fillStyle = `rgba(225,235,255,${(0.25 + 0.7 * tw * s.s).toFixed(3)})`; S.fillRect(s.x, s.y, 0.9 * s.s + 0.4, 0.9 * s.s + 0.4);
+    S.fillStyle = `rgba(225,235,255,${(0.25 + 0.7 * tw * s.s).toFixed(3)})`; S.fillRect(s.x, s.y, 0.9 * s.s + 0.5, 0.9 * s.s + 0.5);
   }
-  // the first star of Christmas Eve
-  const sx = 0.58 * L.Wd, sy = 40, tw = 0.8 + 0.2 * Math.sin(time * 1.7);
-  glow(sx, sy, 9, "200,220,255", 0.3 * tw);
-  const ray = 3.2 + 1.6 * tw;
-  ln(sx - ray, sy, sx + ray, sy, 0.35, "rgba(240,246,255,0.95)"); ln(sx, sy - ray, sx, sy + ray, 0.35, "rgba(240,246,255,0.95)");
-  ell(sx, sy, 0.8, 0.8, "#fff");
+  if (star.active) {
+    glow(star.x, star.y, 30, "255,196,90", 0.3 + 0.06 * Math.sin(time * 5));
+    star8(star.x, star.y, 6.4, time * 1.7);
+  }
   blit(backC);
-  // footprints
-  for (const p of steps) ell(p.x, p.y + 0.2, 0.5, 0.28, `rgba(110,128,176,${(0.55 * Math.min(1, p.life * 2)).toFixed(3)})`);
-  // well crane
-  const w = WELL, px = w.x + 1.6, py = w.y - 9.4;
-  const ex = px - Math.cos(w.a) * 8.2, ey = py - Math.sin(w.a) * 8.2;
-  ln(px + Math.cos(w.a) * 2.8, py + Math.sin(w.a) * 2.8, ex, ey, 0.6, "#5e4a3a");
-  ell(px + Math.cos(w.a) * 3.2, py + Math.sin(w.a) * 3.2 + 0.8, 0.9, 0.9, "#8a8a92");
-  ln(ex, ey, ex, ey + 7.2, 0.2, "#5e4a3a");
-  poly([ex - 0.9, ey + 7.2, ex + 0.9, ey + 7.2, ex + 0.7, ey + 9, ex - 0.7, ey + 9], "#7a5636");
-  // smoke
-  for (const p of smoke) ell(p.x, p.y, p.r, p.r, `rgba(200,208,226,${(0.34 * Math.min(1, p.life * 1.6)).toFixed(3)})`);
-  if (current) current.draw();
-  for (const p of puffs) ell(p.x, p.y, p.r, p.r, `rgba(232,240,252,${Math.min(1, p.life).toFixed(3)})`);
-  // window lights breathe a little
-  for (const h of Object.values(HOUSES)) for (const wr of h.winRects) glow(wr.x + wr.w / 2, wr.y + wr.h / 2, 7, "255,190,90", 0.12 + 0.05 * Math.sin(time * 3 + wr.x));
+  for (const b of birds) if (b.x > -12 && b.x < L.Wd + 14) bird(b);
+  for (const p of puffs) { X.beginPath(); X.arc(p.x, p.y, p.r, 0, TAU); X.fillStyle = `rgba(236,242,252,${Math.min(1, p.life).toFixed(3)})`; X.fill(); }
   blit(fgC);
-  for (const b of birds) bird(b);
   setW(S);
 }
 
@@ -960,15 +523,15 @@ function render() {
         const hasF = frostB[i] <= fT;
         const grown = smooth(clamp(fT / 26, 0, 1));
         const mi = Math.max(mist[i] * smooth(clamp((fT - mistB[i]) / 6, 0, 1)), 0);
-        if (hasF) {
+        if (hasF && eff > 0.45) {
           const tw = 0.8 + 0.2 * Math.sin(time * 3 + hash(c, r, 3) * 40);
           const t = 0.5 * eff;
           fr = lerp(fr, 52, t); fg = lerp(fg, 82, t); fb = lerp(fb, 116, t);
-          glyph = frostG[i]; gr = 224 * tw; gg2 = 244 * tw; gb = 255 * tw;
+          glyph = frostG[i]; const ek = smooth(clamp((eff - 0.45) / 0.4, 0, 1)); gr = lerp(gr, 224 * tw, ek); gg2 = lerp(gg2, 244 * tw, ek); gb = lerp(gb, 255 * tw, ek);
           frostHide = eff;
         } else if (mi > 0.04) {
-          const t = 0.8 * mi * eff;
-          fr = lerp(fr, 50, t); fg = lerp(fg, 78, t); fb = lerp(fb, 112, t);
+          const t = 0.55 * mi * eff;
+          fr = lerp(fr, 40, t); fg = lerp(fg, 64, t); fb = lerp(fb, 96, t);
           const hz = mi * eff;
           if (hz > 0.22 && hash(c, r, 6) < hz * 0.95) { glyph = hash(c, r, 7) < 0.55 ? 46 : hash(c, r, 7) < 0.8 ? 58 : 39; gr = 186; gg2 = 214; gb = 240; }
           else if (glyph) { const q = Math.min(1, hz * 1.1); gr = lerp(gr, 190, q); gg2 = lerp(gg2, 216, q); gb = lerp(gb, 240, q); }
@@ -1101,6 +664,8 @@ const STEP = 1 / 30;
   const skip = Number(QS.get("t")) || 0;
   for (let k = 0; k < skip / STEP; k++) update(STEP);
 }
+
+if (QS.has("clear")) clr.fill(1);
 
 function pointer(e) {
   const cx = e.clientX / L.cw, cy = e.clientY / L.ch;
