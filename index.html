@@ -451,7 +451,7 @@ function makeSnag() {
 function updateBranch(B, dt) {
   let load = 0;
   for (const p of B.perches) if (p.taken && p.taken.mode === "sit") load += p.taken.sp.weight * B.stem[p.i].t ** 2;
-  if (B === ROWAN && SQ.mode !== "away") load += SQ.sp.weight * (SQ.f / (B.stem.length - 1)) ** 2;
+  if (B === ROWAN && SQ.mode !== "away") load += SQ.sp.weight * (Math.max(0, SQ.f) / (B.stem.length - 1)) ** 2;
   B.vel += (-B.k * (B.defl - load * B.soft) - B.c * B.vel) * dt;
   B.defl += B.vel * dt;
 }
@@ -902,7 +902,7 @@ function updateSquirrel(dt) {
     q.t += dt;
     if (q.t < q.wait) return;
     if (MAG.mode !== "away") { q.t = 0; q.wait = 6 + Math.random() * 6; return; }
-    q.mode = "in"; q.f = 0; q.dir = -1; q.pose = "run"; q.gait = 1; q.gp = 0; q.hold = 0; q.s = 2.0 * L.bk;
+    q.mode = "in"; q.f = -3; q.dir = -1; q.pose = "run"; q.gait = 1; q.gp = 0; q.hold = 0; q.s = 2.0 * L.bk;
     q.target = N * (0.84 + 0.07 * Math.random()); q.burst = 0.7 + Math.random() * 0.6;
   }
   const seg = Math.hypot(st[1].x - st[0].x, st[1].y - st[0].y);
@@ -913,7 +913,7 @@ function updateSquirrel(dt) {
     else q.up = Math.min(1, q.up + dt * 4);
     if (q.sitT <= 0) { q.mode = "out"; q.pose = "run"; q.dir = 1; q.gait = 0; q.gp = 0.7; q.hold = 0.4; }
   } else {
-    const goal = q.mode === "in" ? q.target : 0, sgn = q.mode === "in" ? 1 : -1;
+    const goal = q.mode === "in" ? q.target : -9, sgn = q.mode === "in" ? 1 : -1;
     if (q.hold > 0) {
       q.hold -= dt; q.gait += (0 - q.gait) * Math.min(1, dt * 12);
       if (q.hold <= 0) { q.burst = 0.6 + Math.random() * 0.8; q.gp = 0.88; }
@@ -923,7 +923,7 @@ function updateSquirrel(dt) {
       q.f += sgn * ((36 * L.bk * (1 + 0.55 * Math.cos(TAU * (q.gp - 0.12)))) / seg) * dt;
       const g0 = q.gp;
       q.gp = (q.gp + dt * SQ_STRIDE) % 1; q.burst -= dt;
-      if (g0 < 0.45 && q.gp >= 0.45) { ROWAN.vel += 1.6 * (q.f / N) ** 2; snowDust(q.x, q.y, 2); }       // each landing shakes the branch
+      if (g0 < 0.45 && q.gp >= 0.45 && q.f > 0) ROWAN.vel += 0.6 * (q.f / N) ** 2;                        // each landing shakes the branch a little
       if (q.burst <= 0 && g0 < 0.7 && q.gp >= 0.7 && Math.abs(q.f - goal) > 6) q.hold = 0.3 + Math.random() * 0.7;   // it stops only with its feet under it
       if (sgn * (q.f - goal) >= 0) {
         q.f = goal;
@@ -936,7 +936,7 @@ function updateSquirrel(dt) {
       }
     }
   }
-  const i = Math.min(N - 1, Math.floor(q.f)), fr = q.f - i, top = (k) => st[k].y + ROWAN.defl * st[k].t ** 2 - st[k].w * 0.5 - 0.3;
+  const i = clamp(Math.floor(q.f), 0, N - 1), fr = q.f - i, top = (k) => st[k].y + ROWAN.defl * st[k].t ** 2 - st[k].w * 0.5 - 0.3;
   q.x = lerp(st[i].x, st[i + 1].x, fr); q.y = lerp(top(i), top(i + 1), fr);
   const slope = Math.atan2(top(i + 1) - top(i), Math.abs(st[i + 1].x - st[i].x));
   q.pitch = q.pose === "sit" ? 0 : 0.9 * slope * (q.dir < 0 ? 1 : -1);
