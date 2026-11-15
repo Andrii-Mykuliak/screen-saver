@@ -74,8 +74,8 @@ function layout() {
   const w = innerWidth, h = innerHeight, dpr = Math.min(devicePixelRatio || 1, 2);
   const cw = clamp(Math.round(w / 260), 4, 8), ch = Math.round(cw * 1.5);
   const cols = Math.ceil(w / cw), rows = Math.ceil(h / ch), n = cols * rows;
-  const SILL = 2;
-  const bandRows = Math.max(4, Math.ceil(72 / ch));
+  const SILL = 0;
+  const bandRows = 0;
   const wh = rows - SILL - bandRows, ww = cols, wx0 = 0, wy0 = 0;
   const FX = Math.max(2, Math.round(ww / 60)), FY = Math.max(1, Math.round((FX * cw) / ch));
   const MX = Math.max(1, Math.round(FX * 0.5)), MY = Math.max(1, Math.round((MX * cw) / ch));
@@ -127,7 +127,7 @@ function buildCells() {
       const dxw = Math.max(wx0 - c, 0, c - (wx0 + ww - 1)), dyw = Math.max(wy0 - r, 0, r - (sillTop - 1)) * 1.5;
       amb[i] = Math.exp(-Math.hypot(dxw, dyw) / (wh * 0.55));
       const dx = c - fcx, dy = (r - fcy) * 1.5;
-      candleG[i] = Math.exp(-(dx * dx + dy * dy) / (2 * sig * sig));
+      candleG[i] = 0;
 
       if (inWin) {
         if (inPane(c, r)) { kind[i] = 3; continue; }
@@ -136,9 +136,9 @@ function buildCells() {
         const horiz = r < gy0 || r >= gy0 + gh || mrows.some((m) => r >= m && r < m + MY);
         const outer = c === wx0 || c === wx0 + ww - 1 || r === wy0 || r === sillTop - 1;
         const inner = c === gx0 - 1 || c === gx0 + gw || r === gy0 - 1 || r === gy0 + gh;
-        const f = outer ? [8, 12, 24] : inner ? [12, 20, 40] : [10, 16, 32];
+        const f = outer ? [24, 13, 8] : inner ? [46, 27, 16] : [36, 20, 12];
         const g = vert && horiz ? 43 : vert ? 124 : 61;
-        set(i, f, g, outer ? pack(34, 62, 112) : inner ? pack(86, 130, 190) : pack(56, 92, 150));
+        set(i, f, g, outer ? pack(104, 64, 36) : inner ? pack(184, 124, 74) : pack(142, 92, 54));
         continue;
       }
       if (r >= sillTop && r < sillTop + SILL) {
@@ -188,22 +188,6 @@ function buildCells() {
     }
   }
 
-  // foreground objects standing on the sill, in front of the glass
-  const put = (c, r, f, g, col) => { if (c >= 0 && c < cols && r >= 0 && r < rows) fgCells.push({ i: r * cols + c, f, g, col }); };
-  for (let k = 0; k < 3; k++) put(fcx, sillTop - 4 + k, [40, 34, 24], 124, pack(240, 226, 190));
-  for (let k = -1; k <= 1; k++) put(fcx + k, sillTop - 1, [34, 26, 12], 95, pack(230, 184, 92));
-  put(fcx, sillTop - 1, [34, 26, 12], 61, pack(230, 184, 92));
-  const pcx = wx0 + Math.round(ww * 0.78);
-  for (let k = -2; k <= 2; k++) put(pcx + k, sillTop - 2, [40, 20, 12], 61, pack(236, 140, 90));
-  for (let k = -1; k <= 1; k++) put(pcx + k, sillTop - 1, [34, 16, 10], 35, pack(210, 110, 70));
-  for (let dy = 0; dy < 5; dy++) {
-    for (let dx = -4; dx <= 4; dx++) {
-      const e = (dx / 4.3) ** 2 + ((dy - 2) / 2.7) ** 2;
-      if (e > 1 || hash(dx, dy, SEED + 21) < 0.2) continue;
-      const bloom = hash(dx, dy, SEED + 22) < 0.22;
-      put(pcx + dx, sillTop - 3 - dy, bloom ? [40, 8, 12] : [6, 20, 12], bloom ? 64 : "%&*".charCodeAt((hash(dx, dy, 5) * 3) | 0), bloom ? pack(240, 88, 96) : pack(76, 156, 88));
-    }
-  }
 }
 
 // ---------- frost: fern-like branches grown from the pane edges ----------
@@ -272,14 +256,50 @@ function glow(x, y, r, rgb, a) {
 let STARS = [], FLAKES = [], PERCHES = [], STEM = [], TWIGS = [], BERRIES = [];
 let time = 0, puffs = [], notes = [], birds = [];
 const farY = (x) => 68 + 3 * Math.sin(x * 0.05 + 1) + 2 * Math.sin(x * 0.11 + 2);
-const cap = { text: "Святвечір. Снігурі на горобині", t0: 0.6, dur: 7 };
-const setCap = (text, dur) => { cap.text = text; cap.t0 = time; cap.dur = dur; };
-const hint = { until: 24 };
-const star = { x: -12, y: 20, active: false, wait: 9, spark: 0 };
+// Bright stars: RA (hours), Dec (degrees), visual magnitude, tint (w white, b blue, y yellow, o orange, r red).
+const CAT = [
+  [6.752, -16.716, -1.46, "w"], [14.261, 19.182, -0.05, "o"], [18.616, 38.784, 0.03, "w"], [5.278, 45.998, 0.08, "y"], [5.242, -8.202, 0.13, "b"],
+  [7.655, 5.225, 0.34, "y"], [5.919, 7.407, 0.5, "r"], [19.846, 8.868, 0.77, "w"], [4.599, 16.509, 0.85, "o"], [16.49, -26.432, 1.06, "r"],
+  [13.42, -11.161, 0.97, "b"], [7.755, 28.026, 1.14, "o"], [22.961, -29.622, 1.16, "w"], [20.69, 45.28, 1.25, "w"], [10.14, 11.967, 1.35, "b"],
+  [7.577, 31.888, 1.58, "w"], [5.419, 6.35, 1.64, "b"], [5.438, 28.608, 1.65, "b"], [5.603, -1.202, 1.69, "b"], [5.679, -1.943, 1.74, "b"],
+  [5.533, -0.299, 2.23, "b"], [5.796, -9.67, 2.06, "b"], [5.585, 9.934, 3.4, "b"], [6.378, -17.956, 2.0, "b"], [6.977, -28.972, 1.5, "b"], [7.14, -26.393, 1.84, "y"],
+  [7.452, 8.289, 2.9, "w"], [6.629, 16.399, 1.93, "w"], [6.383, 22.514, 2.88, "o"], [6.732, 25.131, 3.06, "y"], [7.335, 21.982, 3.53, "w"],
+  [2.53, 89.264, 1.98, "y"],
+  [11.062, 61.751, 1.79, "o"], [11.031, 56.382, 2.37, "w"], [11.897, 53.695, 2.44, "w"], [12.257, 57.033, 3.31, "w"], [12.9, 55.96, 1.77, "w"], [13.399, 54.925, 2.04, "w"], [13.792, 49.313, 1.86, "b"],
+  [8.504, 60.718, 3.35, "w"], [8.987, 48.042, 3.14, "w"], [10.285, 42.914, 3.45, "w"], [10.373, 41.499, 3.05, "w"], [11.303, 31.529, 3.8, "w"], [11.308, 33.094, 3.5, "w"],
+  [9.06, 47.157, 3.6, "w"], [11.161, 44.499, 3.0, "o"], [11.767, 47.78, 3.7, "w"], [9.547, 51.678, 3.17, "w"], [9.85, 59.04, 3.8, "w"],
+  [14.845, 74.156, 2.08, "o"], [15.345, 71.834, 3.0, "w"], [17.537, 86.586, 4.35, "w"], [16.766, 82.037, 4.2, "w"], [15.734, 77.795, 4.3, "w"], [16.292, 75.755, 4.95, "w"],
+  [0.675, 56.537, 2.24, "o"], [0.153, 59.15, 2.28, "w"], [0.945, 60.717, 2.47, "b"], [1.43, 60.235, 2.68, "w"], [1.907, 63.67, 3.38, "w"],
+  [21.31, 62.586, 2.45, "w"], [21.478, 70.561, 3.2, "b"], [23.655, 77.633, 3.2, "o"], [22.828, 66.2, 3.5, "o"], [22.181, 58.2, 3.35, "y"],
+  [17.943, 51.489, 2.23, "o"], [17.507, 52.301, 2.79, "o"], [17.892, 56.873, 3.75, "o"], [17.536, 55.173, 4.9, "w"], [19.209, 67.662, 3.07, "y"], [17.146, 65.715, 3.17, "w"],
+  [15.415, 59.039, 3.3, "o"], [14.073, 64.376, 3.65, "w"], [12.558, 69.788, 3.9, "w"], [18.35, 72.733, 3.57, "w"],
+  [20.37, 40.257, 2.2, "y"], [20.77, 33.97, 2.46, "o"], [19.512, 27.96, 3.18, "o"], [19.75, 45.131, 2.87, "b"],
+  [18.835, 33.363, 3.52, "b"], [18.982, 32.69, 3.25, "b"], [18.908, 36.899, 4.2, "r"], [18.746, 37.605, 4.3, "w"],
+  [19.771, 10.613, 2.72, "o"], [19.922, 6.407, 3.71, "y"], [19.425, 3.115, 3.4, "w"], [19.09, 13.863, 3.0, "w"], [20.188, -0.82, 3.2, "y"],
+  [5.992, 44.947, 1.9, "w"], [5.995, 37.213, 2.65, "b"], [4.95, 33.166, 2.69, "o"],
+  [5.627, 21.14, 3.0, "b"], [3.79, 24.105, 2.87, "b"], [3.819, 24.053, 3.6, "b"], [3.748, 24.113, 3.7, "b"], [3.763, 24.368, 3.9, "b"], [3.772, 23.948, 4.2, "b"], [3.753, 24.467, 4.3, "b"],
+  [4.477, 19.18, 3.5, "o"], [4.478, 15.871, 3.4, "o"],
+  [3.405, 49.861, 1.79, "y"], [3.136, 40.956, 2.1, "b"], [3.902, 31.884, 2.85, "b"], [3.964, 40.01, 2.89, "b"], [3.715, 47.788, 3.0, "b"], [3.08, 53.506, 2.93, "w"], [2.845, 55.896, 3.8, "w"],
+  [0.14, 29.091, 2.06, "b"], [1.162, 35.621, 2.05, "r"], [2.065, 42.33, 2.1, "o"], [0.655, 30.861, 3.27, "o"],
+  [23.079, 15.205, 2.49, "w"], [23.063, 28.083, 2.42, "r"], [0.22, 15.184, 2.83, "b"], [21.736, 9.875, 2.39, "o"],
+  [14.75, 27.074, 2.37, "o"], [13.911, 18.398, 2.68, "y"], [14.535, 38.308, 3.04, "w"], [15.032, 40.391, 3.5, "w"], [14.531, 30.371, 3.58, "o"],
+  [15.578, 26.715, 2.23, "w"], [15.464, 29.106, 3.68, "w"], [15.549, 31.359, 4.1, "w"], [15.712, 26.296, 3.8, "w"], [15.96, 26.878, 4.15, "w"],
+  [16.503, 21.49, 2.77, "y"], [16.688, 31.603, 2.81, "w"], [17.251, 36.809, 3.16, "o"], [16.715, 38.922, 3.5, "y"], [17.251, 24.839, 3.14, "w"], [17.244, 14.39, 3.5, "r"], [17.005, 30.926, 3.9, "w"],
+  [11.818, 14.572, 2.14, "w"], [10.333, 19.842, 2.28, "o"], [11.235, 20.524, 2.56, "w"], [10.278, 23.417, 3.44, "w"], [11.237, 15.43, 3.3, "w"], [9.879, 26.007, 3.88, "o"], [9.764, 23.774, 2.98, "o"],
+  [13.036, 10.959, 2.83, "y"], [12.694, -1.449, 2.7, "y"], [11.845, 1.765, 3.6, "w"], [8.275, 9.186, 3.5, "o"], [8.745, 18.154, 3.9, "w"],
+  [17.582, 12.56, 2.08, "w"], [20.66, 15.912, 3.8, "w"], [20.626, 14.595, 3.6, "w"],
+  [2.12, 23.462, 2.0, "o"], [1.911, 20.808, 2.64, "y"], [1.892, 19.294, 3.9, "w"], [3.038, 4.09, 2.5, "r"],
+  [9.351, 34.393, 3.1, "r"], [12.934, 38.318, 2.9, "w"], [13.198, 27.878, 4.3, "y"], [5.056, 60.442, 4.0, "y"], [4.901, 66.343, 4.3, "b"],
+];
+const TINT = { w: "238,242,255", b: "176,204,255", y: "255,238,178", o: "255,184,120", r: "255,140,98" };
+const LAT = (49 * Math.PI) / 180, EL0 = (30 * Math.PI) / 180, SKY_CY = 42, HFOV = (120 * Math.PI) / 180;
+const LST0 = 3.0, LST_RATE = 0.03;    // hours of sidereal time, and hours per second (about 110x real time)
+const hint = { until: 0 };
+const MOON = { x: 0.15, y: 24, r: 8 };
 
 function buildWorld() {
   const Wd = L.Wd, rnd = mulberry32(SEED + 31);
-  STARS = []; for (let k = 0; k < 70; k++) STARS.push({ x: rnd() * Wd, y: rnd() * 56, ph: rnd() * TAU, s: 0.5 + rnd() * 0.5 });
+  STARS = CAT.map(([ra, dec, mag, c], k) => { const d = (dec * Math.PI) / 180; return { ra: (ra * Math.PI) / 12, sd: Math.sin(d), cd: Math.cos(d), mag, rgb: TINT[c], ph: rnd() * TAU, k }; });
   FLAKES = []; const nf = Math.round((Wd * 100) / 60);
   for (let k = 0; k < nf; k++) FLAKES.push({ x: rnd() * (Wd + 10) - 5, y: rnd() * 104 - 2, z: 0.2 + rnd() * 0.8, ph: rnd() * TAU });
   // a rowan branch sweeps in from the right edge, heavy with berries
@@ -304,15 +324,18 @@ function buildWorld() {
 function bakeSky() {
   X = skyC.getContext("2d"); setW(X);
   const Wd = L.Wd;
-  const g = X.createLinearGradient(0, 0, 0, 72);
-  g.addColorStop(0, "#04081f"); g.addColorStop(0.5, "#101e4c"); g.addColorStop(1, "#33497f");
+  const g = X.createLinearGradient(0, 0, 0, 80);
+  g.addColorStop(0, "#02040d"); g.addColorStop(0.55, "#070f27"); g.addColorStop(1, "#18295a");
   X.fillStyle = g; X.fillRect(-6, -6, Wd + 12, 130);
-  const mx = 0.17 * Wd, my = 30;
-  const h = X.createRadialGradient(mx, my, 4, mx, my, 34);
-  h.addColorStop(0, "rgba(190,205,240,0.38)"); h.addColorStop(1, "rgba(190,205,240,0)");
-  X.fillStyle = h; X.fillRect(mx - 34, my - 34, 68, 68);
-  ell(mx, my, 7.4, 7.4, "#f0efdc");
-  ell(mx - 2.2, my - 1.2, 1.7, 1.5, "rgba(170,170,155,0.5)"); ell(mx + 2.4, my + 2.2, 2.1, 1.7, "rgba(170,170,155,0.45)"); ell(mx + 0.5, my - 3.6, 1.2, 1.1, "rgba(170,170,155,0.4)");
+  // a fixed crescent moon with a faint earthshine disc
+  const mx = MOON.x * Wd, my = MOON.y, R = MOON.r;
+  const h = X.createRadialGradient(mx, my, R * 0.6, mx, my, R * 5);
+  h.addColorStop(0, "rgba(200,214,245,0.3)"); h.addColorStop(1, "rgba(200,214,245,0)");
+  X.fillStyle = h; X.fillRect(mx - R * 5, my - R * 5, R * 10, R * 10);
+  ell(mx, my, R, R, "rgba(70,84,124,0.55)");
+  X.save(); X.beginPath(); X.arc(mx, my, R, 0, TAU); X.clip();
+  X.beginPath(); X.rect(mx - R * 2, my - R * 2, R * 4, R * 4); X.arc(mx + R * 0.52, my - R * 0.12, R * 0.9, 0, TAU);
+  X.fillStyle = "#f4f1dc"; X.fill("evenodd"); X.restore();
 }
 
 function bakeBack() {
@@ -401,13 +424,6 @@ function update(dt) {
     if (f.y > 102) { f.y = -2; f.x = Math.random() * (Wd + 10) - 5; }
     if (f.x > Wd + 6) f.x = -5;
   }
-  // the carol star drifts across the sky, scattering sparks
-  if (!star.active) { star.wait -= dt; if (star.wait <= 0) { star.active = true; star.x = -12; setCap("Колядна зірка пливе над полем", 6); } }
-  else {
-    star.x += (Wd + 24) / 60 * dt; star.y = 16 + 7 * Math.sin(star.x * 0.045);
-    if (time - star.spark > 0.05) { star.spark = time; spark(star.x - 3 + Math.random() * 2, star.y + (Math.random() - 0.5) * 6); }
-    if (star.x > Wd + 12) { star.active = false; star.wait = 8 + Math.random() * 6; }
-  }
   const free = () => { const f = PERCHES.filter((p) => !p.taken); return f.length ? f[(Math.random() * f.length) | 0] : null; };
   for (const b of birds) {
     b.t += dt;
@@ -446,17 +462,32 @@ function update(dt) {
 // ---------- drawing the scene into the raster ----------
 function blit(c) { S.save(); S.setTransform(1, 0, 0, 1, 0, 0); S.drawImage(c, 0, 0); S.restore(); }
 
+function drawStars() {
+  const Wd = L.Wd, lst = (LST0 + time * LST_RATE) * (Math.PI / 12);
+  const sinφ = Math.sin(LAT), cosφ = Math.cos(LAT), sE = Math.sin(EL0), cE = Math.cos(EL0);
+  const k = (Wd / 2) / Math.tan(HFOV / 4);
+  const mx = MOON.x * Wd;
+  for (const st of STARS) {
+    const H = lst - st.ra, cH = Math.cos(H), sH = Math.sin(H);
+    const e = -st.cd * sH, n = cosφ * st.sd - sinφ * st.cd * cH, u = sinφ * st.sd + cosφ * st.cd * cH;
+    if (u < -0.02) continue;
+    const d = cE * n + sE * u, yy = -sE * n + cE * u;
+    if (d < -0.6) continue;
+    const x = Wd / 2 + (e / (1 + d)) * k, y = SKY_CY - (yy / (1 + d)) * k;
+    if (x < -2 || x > Wd + 2 || y < -2 || y > 86) continue;
+    if (Math.hypot(x - mx, y - MOON.y) < MOON.r * 1.5) continue;
+    const tw = 0.88 + 0.12 * Math.sin(time * (1.5 + (st.k % 5) * 0.4) + st.ph);
+    const rr = clamp(0.75 + 0.42 * (4.1 - st.mag), 0.75, 2.8), a = clamp(0.85 + 0.1 * (3.5 - st.mag), 0.8, 1) * tw;
+    const col = `rgba(${st.rgb},${a})`;
+    if (st.mag < 2.4) { const L2 = rr * 3.2; ln(x - L2, y, x + L2, y, 0.35, col); ln(x, y - L2, x, y + L2, 0.35, col); }
+    X.beginPath(); X.arc(x, y, rr, 0, TAU); X.fillStyle = col; X.fill();
+  }
+}
+
 function drawScene() {
   X = S; S.setTransform(1, 0, 0, 1, 0, 0); S.fillStyle = "#000"; S.fillRect(0, 0, L.SW, L.SH); setW(S);
   blit(skyC);
-  for (const s of STARS) {
-    const tw = 0.55 + 0.45 * Math.sin(time * (1.2 + s.s) + s.ph);
-    S.fillStyle = `rgba(225,235,255,${(0.25 + 0.7 * tw * s.s).toFixed(3)})`; S.fillRect(s.x, s.y, 0.9 * s.s + 0.5, 0.9 * s.s + 0.5);
-  }
-  if (star.active) {
-    glow(star.x, star.y, 30, "255,196,90", 0.3 + 0.06 * Math.sin(time * 5));
-    star8(star.x, star.y, 6.4, time * 1.7);
-  }
+  drawStars();
   blit(backC);
   for (const b of birds) if (b.x > -12 && b.x < L.Wd + 14) bird(b);
   for (const p of puffs) { X.beginPath(); X.arc(p.x, p.y, p.r, 0, TAU); X.fillStyle = `rgba(236,242,252,${Math.min(1, p.life).toFixed(3)})`; X.fill(); }
@@ -575,24 +606,6 @@ function render() {
     fd[o] = lerp(base[0], f.f[0], mixF); fd[o + 1] = lerp(base[1], f.f[1], mixF); fd[o + 2] = lerp(base[2], f.f[2], mixF);
     G[f.i] = f.g; C[f.i] = f.col;
   }
-  const fi = L.flame.r * cols + L.flame.c;
-  {
-    const o = fi * 4, fr = ["(", ")", "^", "'", "!"][Math.floor(time * 11 + Math.sin(time * 5) * 3) % 5 < 0 ? 0 : Math.floor(time * 11 + Math.sin(time * 5) * 3) % 5];
-    fd[o] = lerp(fd[o], 120, 0.5); fd[o + 1] = lerp(fd[o + 1], 70, 0.5); fd[o + 2] = lerp(fd[o + 2], 20, 0.5);
-    G[fi] = fr.charCodeAt(0); C[fi] = pack(255, 232, 140);
-  }
-  // captions
-  const capRow = Math.min(rows - 3, L.wy0 + L.wh + L.SILL + 2);
-  const putText = (text, row, rgb, a) => {
-    if (a <= 0.01 || row < 0 || row >= rows) return;
-    const c0 = Math.floor((cols - text.length) / 2);
-    for (let k = 0; k < text.length; k++) {
-      const c = c0 + k, i = row * cols + c, ch2 = text.charCodeAt(k);
-      if (c < 0 || c >= cols || ch2 === 32) continue;
-      const o = i * 4;
-      G[i] = ch2; C[i] = pack(lerp(fd[o], rgb[0], a), lerp(fd[o + 1], rgb[1], a), lerp(fd[o + 2], rgb[2], a));
-    }
-  };
   // composite
   fillCtx.putImageData(fillImg, 0, 0);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -610,18 +623,6 @@ function render() {
     const s = css(C[i]);
     if (s !== last) ctx.fillStyle = last = s;
     ctx.fillText(chr(g), (i % cols) * cw + cw / 2, ((i / cols) | 0) * ch + ch / 2 + ch * 0.06);
-  }
-  // captions use a larger font so they stay readable
-  const capY = (L.wy0 + L.wh + L.SILL + 2) * ch + ch * 0.5;
-  ctx.textBaseline = "middle";
-  if (cap.text) {
-    const t = time - cap.t0, a = Math.min(1, t / 0.6, Math.max(0, (cap.dur - t) / 0.6));
-    if (a > 0.01) { ctx.font = `700 ${clamp(Math.round(L.w / 70), 13, 22)}px ${L.font}`; ctx.fillStyle = `rgba(240,218,164,${a.toFixed(3)})`; ctx.fillText(cap.text, L.w / 2, capY); }
-  }
-  if (time < hint.until) {
-    const a = Math.min(1, (hint.until - time) / 2) * 0.75;
-    ctx.font = `600 ${clamp(Math.round(L.w / 110), 11, 15)}px ${L.font}`; ctx.fillStyle = `rgba(160,186,232,${a.toFixed(3)})`;
-    ctx.fillText("проведи мишею по склу, щоб розчистити іній", L.w / 2, capY + clamp(Math.round(L.w / 70), 13, 22) * 1.8);
   }
 }
 
