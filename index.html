@@ -451,6 +451,7 @@ function makeSnag() {
 function updateBranch(B, dt) {
   let load = 0;
   for (const p of B.perches) if (p.taken && p.taken.mode === "sit") load += p.taken.sp.weight * B.stem[p.i].t ** 2;
+  if (B === ROWAN && SQ.mode !== "away") load += SQ.sp.weight * (SQ.f / (B.stem.length - 1)) ** 2;
   B.vel += (-B.k * (B.defl - load * B.soft) - B.c * B.vel) * dt;
   B.defl += B.vel * dt;
 }
@@ -648,6 +649,7 @@ const seat = (b, p) => { const q = perchXY(p); return [q[0], q[1] - b.sp.legY * 
 
 function freePerch(b) {
   if (b === MAG) { const p = SNAG.perches[0]; return p && !p.taken ? p : null; }
+  if (SQ.mode !== "away") return null;
   const f = ROWAN.perches.filter((p) => !p.taken);
   if (f.length < Math.min(2, ROWAN.perches.length)) return null;
   const mates = BIRDS.filter((m) => m !== b && m.sp.flock === b.sp.flock && m.perch);
@@ -772,6 +774,131 @@ function updateBird(b, dt) {
   }
 }
 
+// ---------- the squirrel ----------
+// Drawn facing +x with its feet on y = 0. Two poses: on all fours (running or frozen, alert), and sitting up with a berry.
+const SQC = { fur: "#b5561f", furD: "#96461a", belly: "#f2e2c6", tail: "#bd5a1e", tailTip: "#dc8a48", ear: "#8a3c12", tuft: "#4a1e08", paw: "#8a4016", nose: "#2e160c", berry: "#d83a22" };
+const SQ = { sp: { eye: [10, 10, 14], weight: 3.5 }, mode: "away", t: 0, wait: 0, f: 0, dir: -1, ph: 0, gait: 0, pose: "run", pitch: 0, x: -99, y: -99, s: 2.25, target: 0, burst: 0, hold: 0, sitT: 0, eye: null };
+
+// A bushy tail: fur laid along a smooth curve through the given points, widest past the middle.
+function plume(pts, widths) {
+  const n = pts.length - 1, N = 16, at = (u) => {
+    const i = Math.min(n - 1, Math.floor(u)), f = u - i;
+    const p0 = pts[Math.max(0, i - 1)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[Math.min(n, i + 2)];
+    const q = (a, b, c, d) => 0.5 * (2 * b + (c - a) * f + (2 * a - 5 * b + 4 * c - d) * f * f + (3 * b - a - 3 * c + d) * f * f * f);
+    return [q(p0[0], p1[0], p2[0], p3[0]), q(p0[1], p1[1], p2[1], p3[1])];
+  };
+  let prev = at(0);
+  for (let k = 1; k <= N; k++) {
+    const u = (k / N) * n, p = at(u), i = Math.min(n - 1, Math.floor(u)), f = u - i;
+    const ang = Math.atan2(p[1] - prev[1], p[0] - prev[0]), seg = Math.hypot(p[0] - prev[0], p[1] - prev[1]);
+    shape(pEll((p[0] + prev[0]) / 2, (p[1] + prev[1]) / 2, seg * 0.95 + 0.2, lerp(widths[i], widths[i + 1], f), ang), k > N * 0.72 ? SQC.tailTip : SQC.tail, ang);
+    prev = p;
+  }
+}
+
+function squirrelHead(hx, hy, q) {
+  const c = SQC;
+  // ears with their winter tufts, the far one first
+  shape(pPoly([hx - 0.1, hy - 0.85, hx + 0.2, hy - 2.45, hx + 0.6, hy - 0.85]), c.ear, Math.PI / 2);
+  line(hx + 0.2, hy - 2.3, hx + 0.28, hy - 3.2, 0.3, c.tuft);
+  shape(pEll(hx, hy, 1.25, 1.05, 0.2), c.fur, 0.3);
+  shape(pEll(hx + 0.95, hy + 0.35, 0.82, 0.62, 0.15), c.fur, 0.2);
+  shape(pEll(hx + 0.95, hy + 0.66, 0.72, 0.36, 0.1), c.belly);
+  shape(pEll(hx + 1.72, hy + 0.28, 0.2, 0.18), c.nose);
+  shape(pPoly([hx - 0.8, hy - 0.7, hx - 0.9, hy - 2.4, hx - 0.05, hy - 0.95]), c.fur, Math.PI / 2);
+  line(hx - 0.9, hy - 2.25, hx - 1.0, hy - 3.2, 0.32, c.tuft);
+  const ex = hx + 0.35, ey = hy - 0.22, m = X.getTransform();
+  shape(pEll(ex, ey, 0.3, 0.3), "#0a0a0e");
+  q.eye = [m.a * ex + m.c * ey + m.e, m.b * ex + m.d * ey + m.f];
+}
+
+function drawSquirrel(q) {
+  const c = SQC, g = q.gait, ph = q.ph;
+  G2.save(); G2.translate(q.x, q.y); G2.scale(q.dir * q.s, q.s); G2.rotate(q.pitch);
+  if (q.pose === "sit") {
+    const nib = 0.07 * Math.sin(time * 15), sway = 0.35 * Math.sin(time * 1.3);
+    plume([[-1.5, -0.9], [-3.9, -1.3], [-3.7, -4.8], [-2.7, -7.2], [-3.9 + sway, -9.0]], [0.75, 1.3, 1.55, 1.45, 0.95]);
+    line(0.3, -0.3, 2.5, -0.25, 0.55, c.paw);                                     // long hind foot
+    const torso = (k) => {
+      k.beginPath(); k.moveTo(-1.7, -0.9);
+      k.bezierCurveTo(-2.3, -2.6, -1.6, -4.8, -0.4, -5.9); k.bezierCurveTo(0.4, -6.4, 1.5, -6.0, 1.7, -5.0);
+      k.bezierCurveTo(2.0, -3.6, 2.3, -2.0, 1.6, -0.7); k.bezierCurveTo(0.6, -0.4, -0.9, -0.4, -1.7, -0.9); k.closePath();
+    };
+    shape(torso, c.fur, Math.PI / 2 + 0.2);
+    G2.save(); G2.clip(torso); shape(pEll(1.65, -3.2, 0.85, 2.5), c.belly); G2.restore();
+    shape(pEll(0.1, -1.7, 1.8, 1.5, 0.15), c.furD, 1.2);                          // haunch
+    squirrelHead(1.45, -7.05 + nib * 0.5, q);
+    line(0.9, -5.0, 1.9, -4.3, 0.65, c.fur); line(1.9, -4.3, 2.65, -5.3 + nib, 0.55, c.paw);   // arm up to the mouth
+    shape(pEll(2.95, -5.55 + nib, 0.5, 0.5), c.berry);
+  } else {
+    const alert = 1 - g;                                                          // frozen on all fours, head up
+    G2.translate(0, -0.25 * g * Math.abs(Math.sin(ph)));
+    const fx = 0.9 * g * Math.sin(ph), fl = 0.5 * g * Math.max(0, Math.cos(ph));
+    const hx2 = 0.9 * g * Math.sin(ph + 2.6), hl = 0.5 * g * Math.max(0, Math.cos(ph + 2.6));
+    const arch = 0.3 * g * Math.sin(ph + 1.2), wv = (k) => 0.45 * g * Math.sin(ph - k * 0.9) - alert * k * 0.45;
+    plume([[-3.0, -2.6], [-5.0, -2.9 + wv(1)], [-6.9, -3.9 + wv(2)], [-8.2, -5.4 + wv(3)], [-8.8, -7.2 + wv(4)]], [0.7, 1.25, 1.55, 1.45, 0.95]);
+    line(1.5, -2.0, 2.0 - fx, -0.3, 0.5, c.furD); line(-2.6 - hx2, -0.3, -1.0 - hx2, -0.25, 0.5, c.furD);    // far legs
+    const body = (k) => {
+      k.beginPath(); k.moveTo(-3.3, -2.2);
+      k.bezierCurveTo(-3.2, -4.0 - arch, -0.8, -4.4 - arch, 1.4, -3.7); k.bezierCurveTo(2.4, -3.4, 2.9, -2.6, 2.6, -1.8);
+      k.bezierCurveTo(1.6, -1.2, -0.6, -1.0, -2.0, -1.1); k.bezierCurveTo(-2.9, -1.2, -3.4, -1.6, -3.3, -2.2); k.closePath();
+    };
+    shape(body, c.fur, 0.08);
+    G2.save(); G2.clip(body); shape(pEll(1.0, -1.25, 2.3, 0.5), c.belly); G2.restore();
+    shape(pEll(-2.0, -2.1, 1.5, 1.5), c.furD, 1.2);                               // haunch
+    line(-2.3 + hx2 * 0.5, -1.0, -2.9 + hx2, -0.35 - hl, 0.6, c.paw); line(-2.9 + hx2, -0.3 - hl, -1.2 + hx2, -0.24 - hl, 0.5, c.paw);
+    line(1.9, -2.3, 2.3 + fx * 0.5, -1.2, 0.65, c.fur); line(2.3 + fx * 0.5, -1.2, 2.7 + fx, -0.32 - fl, 0.5, c.paw);
+    line(2.7 + fx, -0.26 - fl, 3.2 + fx, -0.26 - fl, 0.4, c.paw);
+    squirrelHead(3.6, -3.45 - 0.55 * alert, q);
+  }
+  G2.restore();
+}
+
+// The squirrel runs out along the rowan branch in bursts, freezes to look around, sits up to eat a berry and runs back.
+function updateSquirrel(dt) {
+  const q = SQ, st = ROWAN.stem, N = st.length - 1;
+  if (q.mode === "away") {
+    q.t += dt;
+    if (q.t < q.wait) return;
+    if (MAG.mode !== "away") { q.t = 0; q.wait = 6 + Math.random() * 6; return; }
+    q.mode = "in"; q.f = 0; q.dir = -1; q.pose = "run"; q.gait = 1; q.hold = 0; q.s = 2.25 * L.bk;
+    q.target = N * (0.84 + 0.07 * Math.random()); q.burst = 0.6 + Math.random() * 0.5;
+  }
+  const seg = Math.hypot(st[1].x - st[0].x, st[1].y - st[0].y);
+  if (q.mode === "sit") {
+    q.sitT -= dt;
+    if (q.sitT <= 0) { q.mode = "out"; q.pose = "run"; q.dir = 1; q.gait = 0; q.hold = 0.35; }
+  } else {
+    const goal = q.mode === "in" ? q.target : 0, sgn = q.mode === "in" ? 1 : -1;
+    if (q.hold > 0) {
+      q.hold -= dt; q.gait += (0 - q.gait) * Math.min(1, dt * 12);
+      if (q.hold <= 0) q.burst = 0.5 + Math.random() * 0.7;
+    } else {
+      q.gait += (1 - q.gait) * Math.min(1, dt * 12);
+      q.f += sgn * ((34 * L.bk) / seg) * dt; q.ph += dt * 17; q.burst -= dt;
+      if (q.burst <= 0 && Math.abs(q.f - goal) > 6) q.hold = 0.3 + Math.random() * 0.7;
+      if (sgn * (q.f - goal) >= 0) {
+        q.f = goal;
+        if (q.mode === "in") { q.mode = "sit"; q.pose = "sit"; q.sitT = 5 + Math.random() * 4; }
+        else {
+          q.mode = "away"; q.t = 0; q.wait = QS.has("sq") ? 8 : 180 + Math.random() * 150;
+          for (const b of BIRDS) if (b.mode === "away") b.wait = Math.max(b.wait, b.t + 8 + Math.random() * 10);    // the birds take their time coming back
+          return;
+        }
+      }
+    }
+  }
+  const i = Math.min(N - 1, Math.floor(q.f)), fr = q.f - i, top = (k) => st[k].y + ROWAN.defl * st[k].t ** 2 - st[k].w * 0.5 - 0.3;
+  q.x = lerp(st[i].x, st[i + 1].x, fr); q.y = lerp(top(i), top(i + 1), fr);
+  const slope = Math.atan2(top(i + 1) - top(i), Math.abs(st[i + 1].x - st[i].x));
+  q.pitch = q.pose === "sit" ? 0 : 0.9 * slope * (q.dir < 0 ? 1 : -1);
+  // small birds do not wait to find out what it wants
+  for (const b of BIRDS) {
+    if (b.mode === "sit" && Math.abs(b.x - q.x) < 26 * L.bk) { b.panic = true; b.sitLeft = Math.min(b.sitLeft, Math.random() * 0.25); }
+    else if (b.mode === "fly" && b.kf !== "leave" && b.perch) { b.perch.taken = null; b.perch = null; b.scared = true; launch(b, spawnPoint(b), "leave"); }
+  }
+}
+
 function buildWorld() {
   const Wd = L.Wd, rnd = mulberry32(SEED + 33);
   STARS = CAT.map(([ra, dec, mag, c], k) => { const d = (dec * Math.PI) / 180; return { ra: (ra * Math.PI) / 12, sd: Math.sin(d), cd: Math.cos(d), mag, rgb: TINT[c], ph: rnd() * TAU, k }; });
@@ -785,6 +912,7 @@ function buildWorld() {
     return newBird(nm, ZOO ? 0.3 + k * 0.5 : first[f] + (seen[f] - 1) * 1.4 + Math.random());
   });
   MAG = newBird("magpie", QS.has("mag") ? 0.5 : 45 + Math.random() * 25);
+  SQ.mode = "away"; SQ.t = 0; SQ.eye = null; SQ.wait = QS.has("sq") ? 1 : 90 + Math.random() * 60;
 }
 
 // ---------- simulation ----------
@@ -800,6 +928,7 @@ function update(dt) {
   updateBranch(ROWAN, dt); updateBranch(SNAG, dt);
   for (const b of BIRDS) updateBird(b, dt);
   updateBird(MAG, dt);
+  updateSquirrel(dt);
   for (const p of dust) { p.vy += 9 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt * 0.9; }
   if (dust.length) dust = dust.filter((p) => p.life > 0);
 }
@@ -812,6 +941,7 @@ function drawScene() {
   if (MAG.mode !== "away") drawBird(MAG);
   drawBranch(ROWAN);
   for (const b of BIRDS) if (b.mode === "sit") drawBird(b);
+  if (SQ.mode !== "away") drawSquirrel(SQ);
   for (const b of BIRDS) if (b.mode === "fly") drawBird(b);
 }
 
@@ -874,7 +1004,7 @@ function render() {
           // solid: a coloured block with a character printed on it
           const k = Math.min(1, cov * 1.08);
           fr = lerp(fr, R, k); fg = lerp(fg, Gc, k); fb = lerp(fb, B, k);
-          if (R > 165 && Gc < 100 && B < 70) { glyph = cellH6[i] < 0.7 ? 111 : 64; gr = R * 0.42; gg = Gc * 0.3; gb = B * 0.3; }          // rowan berries
+          if (R > 165 && Gc < R * 0.42 && B < 70) { glyph = cellH6[i] < 0.7 ? 111 : 64; gr = R * 0.42; gg = Gc * 0.3; gb = B * 0.3; }          // rowan berries
           else if (tagged) {
             glyph = dirGlyph(0.5 * Math.atan2(d2, d1));
             if (lum > 0.4) { gr = R * 0.55; gg = Gc * 0.55; gb = B * 0.6; } else { gr = R * 1.5 + 40; gg = Gc * 1.5 + 40; gb = B * 1.5 + 46; }
@@ -921,7 +1051,7 @@ function render() {
   }
 
   // eyes are stamped as a single bead, so they read against the head
-  for (const b of BIRDS.concat(MAG)) {
+  for (const b of BIRDS.concat(MAG, SQ)) {
     if (b.mode === "away" || !b.eye) continue;
     const c = Math.floor(b.eye[0] / 2), r = Math.floor(b.eye[1] / 3);
     if (c < 0 || r < 0 || c >= cols || r >= rows) continue;
@@ -1032,7 +1162,7 @@ function setup() {
 
 // A sheet of the bird models, drawn large and without the character grid, for checking anatomy.
 function modelSheet() {
-  const W = 1700, Hh = 1000;
+  const W = 1700, Hh = 1190;
   canvas.width = W; canvas.height = Hh; canvas.style.width = W + "px"; canvas.style.height = Hh + "px";
   X = ctx; D = mk(W, Hh).getContext("2d");
   ctx.fillStyle = "#1c3470"; ctx.fillRect(0, 0, W, Hh);
@@ -1044,6 +1174,11 @@ function modelSheet() {
     for (const c of [X, D]) c.setTransform(sc, 0, 0, sc, 100 + col * 185, 90 + row * 160);
     drawBird(b);
   }));
+  [{ ph: 0 }, { ph: 1.6 }, { ph: 3.2 }, { ph: 4.8 }, { gait: 0 }, { pose: "sit" }].forEach((ps, col) => {
+    const q = Object.assign({}, SQ, { x: 0, y: 0, dir: 1, s: 2.6, pitch: 0, pose: "run", gait: 1, ph: 0 }, ps);
+    for (const c of [X, D]) c.setTransform(6.5, 0, 0, 6.5, 190 + col * 270, 1150);
+    drawSquirrel(q);
+  });
 }
 
 canvas = document.querySelector("canvas");
