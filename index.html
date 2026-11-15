@@ -318,6 +318,8 @@ function buildWorld() {
   for (let i = 5; i <= 28; i += 3) PERCHES.push({ x: STEM[i].x, y: STEM[i].y - STEM[i].w * 0.5, taken: null });
   birds = [];
   const nb = clamp(Math.round(Wd / 38), 3, 5);
+  for (let k = 0; k < 2; k++) birds.push({ kind: "tit", x: Wd + 12, y: 10 + Math.random() * 30, dir: -1, ph: Math.random() * 6, state: "wait", t: 0, wait: 6 + k * 9 + Math.random() * 6, perch: null, from: null, dur: 1, peck: 0, stay: 0, s: 2.3, flying: true });
+  for (let k = 0; k < 2; k++) birds.push({ kind: "sparrow", x: Wd + 12, y: 10 + Math.random() * 30, dir: -1, ph: Math.random() * 6, state: "wait", t: 0, wait: 3 + k * 7 + Math.random() * 6, perch: null, from: null, dur: 1, peck: 0, stay: 0, s: 2.4, flying: true });
   for (let k = 0; k < nb; k++) birds.push({ x: Wd + 12, y: 10 + Math.random() * 30, dir: -1, ph: Math.random() * 6, state: "wait", t: 0, wait: 0.3 + k * 1.6 + Math.random() * 2, perch: null, from: null, dur: 1, peck: 0, stay: 0, s: 3.1, flying: true });
 }
 
@@ -325,7 +327,7 @@ function bakeSky() {
   X = skyC.getContext("2d"); setW(X);
   const Wd = L.Wd;
   const g = X.createLinearGradient(0, 0, 0, 80);
-  g.addColorStop(0, "#02040d"); g.addColorStop(0.55, "#070f27"); g.addColorStop(1, "#18295a");
+  g.addColorStop(0, "#0a1a4c"); g.addColorStop(0.5, "#15336f"); g.addColorStop(1, "#2e5a9e");
   X.fillStyle = g; X.fillRect(-6, -6, Wd + 12, 130);
   // a fixed crescent moon with a faint earthshine disc
   const mx = MOON.x * Wd, my = MOON.y, R = MOON.r;
@@ -394,7 +396,41 @@ function star8(x, y, r, spin) {
   X.restore();
 }
 
+function tit(b) {
+  X.save(); X.translate(b.x, b.y); X.scale(b.dir * b.s, b.s);
+  const fl = b.flying, pk = b.peck > 0 ? Math.sin(b.peck * Math.PI) : 0, k = Math.sin(b.ph);
+  if (!fl) X.rotate(pk * 0.55);
+  poly([-1.4, 0.1, -3.9, 0.7 + (fl ? k * 0.5 : 0), -3.8, -0.4, -1.4, -0.5], "#3e4a62");
+  ell(0, 0, 1.9, 1.25, "#86a456");
+  ell(0.8, 0.5, 1.4, 0.95, "#f4d63e");
+  ln(0.3, 0.2, 1.7, 0.9, 0.28, "#16161c");
+  ell(1.9, -0.55, 1.0, 0.95, "#14141a");
+  ell(2.1, -0.15, 0.55, 0.42, "#f4f4f0");
+  poly([2.8, -0.75, 3.5, -0.45, 2.8, -0.25], "#222");
+  if (fl) { ln(-0.2, -0.6, -1.3, -2.4 * k - 0.4, 0.85, "#4a5c82"); ln(0.4, -0.6, 1.1, -2.2 * k - 0.4, 0.85, "#5a6c92"); }
+  else { ell(-0.5, -0.2, 1.2, 0.55, "#4a5c82"); ln(-1.2, -0.1, 0.3, -0.1, 0.22, "#eef0f6"); ln(-0.2, 1.0, -0.3, 1.7, 0.28, "#222"); ln(0.5, 1.0, 0.6, 1.7, 0.28, "#222"); }
+  X.restore();
+}
+
+function sparrow(b) {
+  X.save(); X.translate(b.x, b.y); X.scale(b.dir * b.s, b.s);
+  const fl = b.flying, pk = b.peck > 0 ? Math.sin(b.peck * Math.PI) : 0, k = Math.sin(b.ph);
+  if (!fl) X.rotate(pk * 0.5);
+  poly([-1.4, 0.1, -3.7, 0.8 + (fl ? k * 0.5 : 0), -3.6, -0.3, -1.4, -0.5], "#6a4f36");
+  ell(0, 0, 2.05, 1.35, "#9a7650");
+  ell(0.8, 0.55, 1.45, 0.95, "#cfc7b8");
+  ell(1.9, -0.55, 1.05, 0.98, "#bdb6a8");
+  ell(1.7, -1.1, 0.9, 0.5, "#7a4a2e");
+  ell(2.5, -0.1, 0.4, 0.38, "#1c1c20");
+  poly([2.8, -0.75, 3.5, -0.45, 2.8, -0.25], "#3a3430");
+  if (fl) { ln(-0.2, -0.6, -1.3, -2.4 * k - 0.4, 0.9, "#7a5a3c"); ln(0.4, -0.6, 1.1, -2.2 * k - 0.4, 0.9, "#8a6a48"); }
+  else { ell(-0.5, -0.2, 1.3, 0.6, "#7a5a3c"); ln(-1.3, -0.1, 0.3, -0.1, 0.22, "#e6dcc8"); ln(-0.2, 1.0, -0.3, 1.7, 0.28, "#3a3430"); ln(0.5, 1.0, 0.6, 1.7, 0.28, "#3a3430"); }
+  X.restore();
+}
+
 function bird(b) {
+  if (b.kind === "tit") { tit(b); return; }
+  if (b.kind === "sparrow") { sparrow(b); return; }
   X.save(); X.translate(b.x, b.y); X.scale(b.dir * b.s, b.s);
   const fl = b.flying, pk = b.peck > 0 ? Math.sin(b.peck * Math.PI) : 0;
   if (!fl) X.rotate(pk * 0.45);
@@ -438,10 +474,10 @@ function update(dt) {
       b.ph += dt * 16;
       const u = clamp(b.t / b.dur, 0, 1), e = 1 - Math.pow(1 - u, 2.2), p = b.perch;
       b.x = lerp(b.from.x, p.x, e); b.y = lerp(b.from.y, p.y - 1.5 * b.s, e) - Math.sin(u * Math.PI) * 6;
-      if (u >= 1) { b.state = "sit"; b.t = 0; b.flying = false; b.stay = 4 + Math.random() * 9; b.peck = 0; puff(p.x, p.y - 1, 7, 6, 3); }
+      if (u >= 1) { b.state = "sit"; b.t = 0; b.flying = false; b.stay = b.kind === "tit" ? 2.5 + Math.random() * 4 : b.kind === "sparrow" ? 3 + Math.random() * 5 : 4 + Math.random() * 9; b.peck = 0; puff(p.x, p.y - 1, 7, 6, 3); }
     } else if (b.state === "sit") {
       b.ph += dt * 2;
-      if (!b.peck && Math.random() < dt * 0.6) b.peck = 0.0001;
+      if (!b.peck && Math.random() < dt * (b.kind ? 1.2 : 0.6)) b.peck = 0.0001;
       if (b.peck) { b.peck += dt * 2.4; if (b.peck > 1) b.peck = 0; }
       if (Math.random() < dt * 0.15) b.dir = -b.dir;
       if (b.t > b.stay) { b.perch.taken = null; b.state = "leave"; b.t = 0; b.flying = true; b.from = { x: b.x, y: b.y }; b.to = { x: -10 - Math.random() * 20, y: -6 - Math.random() * 14 }; b.dur = 4.4; b.dir = -1; puff(b.perch.x, b.perch.y - 1, 8, 7, 3); }
@@ -449,7 +485,7 @@ function update(dt) {
       b.ph += dt * 16;
       const u = clamp(b.t / b.dur, 0, 1), e = u * u;
       b.x = lerp(b.from.x, b.to.x, e); b.y = lerp(b.from.y, b.to.y, e) - Math.sin(u * Math.PI) * 5;
-      if (u >= 1) { b.state = "wait"; b.t = 0; b.wait = 1 + Math.random() * 6; b.x = Wd + 12; b.y = 6 + Math.random() * 34; b.dir = -1; }
+      if (u >= 1) { b.state = "wait"; b.t = 0; b.wait = b.kind === "tit" ? 15 + Math.random() * 25 : b.kind === "sparrow" ? 8 + Math.random() * 14 : 1 + Math.random() * 6; b.x = Wd + 12; b.y = 6 + Math.random() * 34; b.dir = -1; }
     }
   }
   for (const p of puffs) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 4 * dt; p.life -= dt * 1.4; }
@@ -544,7 +580,7 @@ function render() {
         glyph = RAMP.charCodeAt(clamp(di + jit, 0, RAMP.length - 1));
       }
       const mx = Math.max(R, Gg, B, 1), boost = clamp(150 / mx, 1, 3.2);
-      let fr = R * 0.26, fg = Gg * 0.26, fb = B * 0.3;
+      let fr = R * 0.4 + 5, fg = Gg * 0.4 + 8, fb = B * 0.44 + 14;
       let gr = clamp(R * boost * 0.95 + 24, 0, 255), gg2 = clamp(Gg * boost * 0.95 + 24, 0, 255), gb = clamp(B * boost * 0.95 + 30, 0, 255);
 
       // frost
