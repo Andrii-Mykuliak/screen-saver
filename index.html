@@ -67,7 +67,7 @@ let canvas, ctx, S, Dc, staticS, staticD;
 let kind, glassIdx, BG3, bgKind, bgG, bgC, spk, hid;
 let F3, G, C, PF, PG, PC, cellJ, cellP, cellH6, cellH7;
 let frostG, frostB, mist, mistB, clr;
-let starG, starC, starCells = [];
+let starG, starC, starCells = [], halo, haloCells = [];
 let outImg, OUT32;
 let X, D;                            // colour context and feather-direction context
 let time = 0;
@@ -308,11 +308,13 @@ const TINT = { w: [238, 242, 255], b: [176, 204, 255], y: [255, 238, 178], o: [2
 const LAT = (49 * Math.PI) / 180, EL0 = (30 * Math.PI) / 180, SKY_CY = 42, HFOV = (120 * Math.PI) / 180;
 const LST0 = 3.0, LST_RATE = 0.03;    // hours of sidereal time, and hours per second (about 110x real time)
 
+const hvOf = (m) => clamp(0.95 - 0.2 * m, 0.16, 0.9);
 // Looking north from 49 degrees of latitude: the sky turns slowly around the Pole Star.
 function placeStars() {
   const { cols, rows, Wd, u, GX0, GY0 } = L;
   for (let k = 0; k < starCells.length; k++) starG[starCells[k]] = 0;
-  starCells.length = 0;
+  for (let k = 0; k < haloCells.length; k++) halo[haloCells[k]] = 0;
+  starCells.length = 0; haloCells.length = 0;
   const lst = (LST0 + time * LST_RATE) * (Math.PI / 12);
   const sl = Math.sin(LAT), cl = Math.cos(LAT), sE = Math.sin(EL0), cE = Math.cos(EL0);
   const k = Wd / 2 / Math.tan(HFOV / 4), mx = MOON.x * Wd;
@@ -324,6 +326,13 @@ function placeStars() {
     if (starG[i]) { if ((starC[i] & 255) >= (col & 255)) return; } else starCells.push(i);
     starG[i] = g; starC[i] = col;
   };
+  const glow = (c, r, v) => {                           // a soft halo in the cells around a bright star
+    if (c < 0 || r < 0 || c >= cols || r >= rows) return;
+    const i = r * cols + c;
+    if (kind[i] !== 3 || bgKind[i]) return;
+    if (!halo[i]) haloCells.push(i);
+    if (v > halo[i]) halo[i] = v;
+  };
   for (const st of STARS) {
     const H = lst - st.ra, cH = Math.cos(H), sH = Math.sin(H);
     const e = -st.cd * sH, n = cl * st.sd - sl * st.cd * cH, up = sl * st.sd + cl * st.cd * cH;
@@ -333,13 +342,22 @@ function placeStars() {
     const x = Wd / 2 + (e / (1 + d)) * k, y = SKY_CY - (yy / (1 + d)) * k;
     if (x < 0 || x > Wd || y < 0 || y > farY(x) - 1 || Math.hypot(x - mx, y - MOON.y) < MOON.r * 1.3) continue;
     const c = Math.floor((GX0 + x * u) / 2), r = Math.floor((GY0 + y * u) / 3);
-    const tw = 0.9 + 0.1 * Math.sin(time * (1.3 + (st.k % 5) * 0.35) + st.ph);
-    const a = clamp(1.16 - 0.08 * st.mag, 0.8, 1) * tw, [R, Gc, B] = st.rgb;
-    put(c, r, st.mag < 2.3 ? 42 : st.mag < 3.5 ? 43 : 46, R * a, Gc * a, B * a);
-    if (st.mag < 1.4) {
-      const q = (st.mag < 0.6 ? 0.6 : 0.42) * a;
+    // every star twinkles at its own pace; the brighter ones carry a halo and flash their rays
+    const m = st.mag, [R, Gc, B] = st.rgb;
+    const tw = 0.76 + 0.24 * Math.sin(time * (1.7 + (st.k % 5) * 0.45) + st.ph), a = clamp(1.2 - 0.05 * m, 0.92, 1) * tw;
+    put(c, r, m < 2.7 ? 0x2726 : m < 3.5 ? 42 : 43, R * a, Gc * a, B * a);
+    const hv = hvOf(m) * tw;
+    glow(c, r, hv);
+    if (m < 2.7) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (dx || dy) glow(c + dx, r + dy, hv * (dx && dy ? 0.3 : 0.55));
+    if (m < 2.7) {
+      const sparkle = 0.5 + 0.5 * Math.sin(time * 2.3 + st.ph * 3), q = (m < 1.5 ? 0.85 : 0.6) * a * (0.6 + 0.4 * sparkle);
       put(c - 1, r, 45, R * q, Gc * q, B * q); put(c + 1, r, 45, R * q, Gc * q, B * q);
       put(c, r - 1, 124, R * q, Gc * q, B * q); put(c, r + 1, 124, R * q, Gc * q, B * q);
+      if (m < 1.5 && sparkle > 0.25) {                   // a cell is taller than it is wide, so two cells sideways balance one upward
+        const q2 = 0.55 * a * sparkle;
+        put(c - 2, r, 45, R * q2, Gc * q2, B * q2); put(c + 2, r, 45, R * q2, Gc * q2, B * q2);
+        glow(c - 2, r, hv * 0.3 * sparkle); glow(c + 2, r, hv * 0.3 * sparkle);
+      }
     }
   }
 }
@@ -873,9 +891,10 @@ function render() {
       } else if (starG[i]) {
         const sc = starC[i];
         glyph = starG[i]; gr = sc >>> 16; gg = (sc >>> 8) & 255; gb = sc & 255;
-        const hl = glyph === 42 ? 0.22 : glyph === 43 ? 0.13 : 0.07;
+        const hl = 0.05 + halo[i] * 0.4;
         fr += gr * hl; fg += gg * hl; fb += gb * hl;
-      } else if (spk[i] && Math.sin(time * 0.8 + spk[i]) > 0.55) { glyph = spk[i] % 2 < 1 ? 46 : 42; gr = 228; gg = 238; gb = 252; }
+      } else if (halo[i]) { const hv = halo[i]; fr += 150 * hv * 0.4; fg += 172 * hv * 0.4; fb += 222 * hv * 0.4; }
+      else if (spk[i] && Math.sin(time * 0.8 + spk[i]) > 0.55) { glyph = spk[i] % 2 < 1 ? 46 : 42; gr = 228; gg = 238; gb = 252; }
     }
 
     // frost on the glass
@@ -1004,7 +1023,7 @@ function setup() {
       cellJ[i] = Math.floor(hash(c, r, SEED) * 3) - 1; cellP[i] = hash(c, r, 3) * 40; cellH6[i] = hash(c, r, 6); cellH7[i] = hash(c, r, 7);
     }
   }
-  starG = new Uint16Array(n); starC = new Uint32Array(n); starCells = [];
+  starG = new Uint16Array(n); starC = new Uint32Array(n); starCells = []; halo = new Float32Array(n); haloCells = [];
   PF = new Uint32Array(n).fill(0xffffffff); PG = new Uint16Array(n); PC = new Uint32Array(n);
   MASK.clear();
   outImg = ctx.createImageData(cols * cwD, rows * chD); OUT32 = new Uint32Array(outImg.data.buffer);
