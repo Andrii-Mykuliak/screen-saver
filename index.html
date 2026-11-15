@@ -437,6 +437,7 @@ function tit(b) {
   poly(tail.map((v, i) => v + (i % 2 ? 0 : (v < 0 ? -0.25 : 0.25))), out);
   ell(0, 0, 2.3, 1.55, out); ell(2.0, -0.7, 1.45, 1.35, out);
   poly(tail, "#2f58b8");
+  if (fl) { wingFar(b, 0.5, -1.0, 3.0, "#1c3c90"); }
   ell(0, 0, 2.05, 1.3, "#3f78dc");
   ell(0.9, 0.55, 1.5, 1.05, "#ffd820");
     ell(2.0, -0.7, 1.2, 1.1, "#3a7cf0");
@@ -444,7 +445,7 @@ function tit(b) {
   ln(1.5, -0.5, 3.0, -0.65, 0.3, "#0d1430");
   ell(2.45, -0.75, 0.2, 0.2, "#fff");
   poly([3.1, -0.9, 4.0, -0.5, 3.1, -0.25], "#222");
-  if (fl) { const f2 = Math.sin(b.ph - 0.6); wing(0.3, -0.6, -1.45 + 1.05 * f2, 3.0 + 0.5 * Math.abs(Math.cos(b.ph - 0.6)), "#1c3c90", null); wing(-0.2, -0.6, -1.45 + 1.05 * k, 3.0 + 0.7 * Math.abs(Math.cos(b.ph)), "#2a54c0", "#f0f4ff"); }
+  if (fl) { wingNear(b, 0.5, -1.0, 3.0, "#2a54c0", null, "#f0f4ff"); }
   else { ell(-0.5, -0.25, 1.35, 0.65, "#2a54c0"); ln(-1.4, -0.15, 0.4, -0.15, 0.3, "#f4f6fc"); ln(-0.2, 1.1, -0.3, 1.9, 0.35, "#222"); ln(0.6, 1.1, 0.7, 1.9, 0.35, "#222"); }
   X.restore();
 }
@@ -457,6 +458,7 @@ function sparrow(b) {
   poly(tail.map((v, i) => v + (i % 2 ? 0 : (v < 0 ? -0.25 : 0.25))), out);
   ell(0, 0, 2.4, 1.6, out); ell(2.0, -0.6, 1.5, 1.4, out);
   poly(tail, "#6b4426");
+  if (fl) { wingFar(b, 0.5, -1.05, 3.0, "#6a4424"); }
   ell(0, 0, 2.15, 1.4, "#a8693a");
   ell(0.9, 0.6, 1.55, 1.0, "#e4dccc");
   ln(-1.2, -0.7, 0.8, -0.5, 0.3, "#3a2312"); ln(-1.0, -0.2, 0.9, 0.0, 0.3, "#3a2312");
@@ -465,7 +467,7 @@ function sparrow(b) {
   ell(2.6, 0.05, 0.62, 0.5, "#0d0d12");
   ell(2.5, -0.45, 0.2, 0.2, "#fff");
   poly([3.1, -0.9, 4.0, -0.5, 3.1, -0.25], "#3a3430");
-  if (fl) { const f2 = Math.sin(b.ph - 0.6); wing(0.3, -0.6, -1.45 + 1.05 * f2, 3.0 + 0.5 * Math.abs(Math.cos(b.ph - 0.6)), "#6a4424", null); wing(-0.2, -0.6, -1.45 + 1.05 * k, 3.0 + 0.7 * Math.abs(Math.cos(b.ph)), "#8a5a32", "#e6dcc8"); }
+  if (fl) { wingNear(b, 0.5, -1.05, 3.0, "#8a5a32", null, "#e6dcc8"); }
   else { ell(-0.5, -0.25, 1.4, 0.7, "#8a5a32"); ln(-1.4, -0.15, 0.4, -0.15, 0.3, "#f0e6d0"); ln(-0.2, 1.1, -0.3, 1.9, 0.35, "#3a3430"); ln(0.6, 1.1, 0.7, 1.9, 0.35, "#3a3430"); }
   X.restore();
 }
@@ -541,6 +543,7 @@ function magpie(m) {
   const tail = [-2.0, -0.3, -9.4, 0.9 + (fl ? k * 0.6 : 0.3 * Math.sin(m.ph * 1.3)), -9.4, 1.9, -2.0, 0.9];
   poly(tail.map((v, i) => v + (i % 2 ? (v > 0.5 ? 0.3 : -0.3) : (v < -3 ? -0.3 : 0))), out);
   poly(tail, "#101a3c");
+  if (fl) wingFar(m, 0.7, -1.3, 5.0, "#05060c");
   poly([-5.2, 0.35 + (fl ? k * 0.3 : 0), -9.2, 0.95 + (fl ? k * 0.55 : 0.2), -9.2, 1.6, -5.2, 0.85], "#1d3a82");
   ell(0, 0, 2.8, 1.75, out); ell(2.9, -1.0, 1.5, 1.4, out);
   ell(0, 0, 2.5, 1.45, "#0b0d16");
@@ -550,22 +553,27 @@ function magpie(m) {
   ell(2.9, -1.0, 1.28, 1.2, "#0b0d16");
   poly([3.9, -1.35, 5.2, -0.95, 3.9, -0.5], "#0b0d16");
   ell(3.3, -1.3, 0.26, 0.26, "#fff");
-  if (fl) {
-    const fk = Math.sin(m.ph), fk2 = Math.sin(m.ph - 0.7);
-    wing(0.3, -0.7, -1.45 + 1.05 * fk2, 4.6 + 0.6 * Math.abs(Math.cos(m.ph - 0.7)), "#05060c", null);
-    wing(-0.3, -0.7, -1.45 + 1.05 * fk, 4.6 + 0.8 * Math.abs(Math.cos(m.ph)), "#0b0d16", "#f4f4f2", "#1d3a82");
-  }
+  if (fl) { wingNear(m, 0.7, -1.35, 5.0, "#0b0d16", "#f4f4f2", "#1d3a82"); }
   else { ln(0.0, 1.2, -0.1, 2.1, 0.4, "#111"); ln(0.9, 1.2, 1.0, 2.1, 0.4, "#111"); }
   X.restore();
 }
 
 function wing(x, y, ang, L, col, patch, sheen) {
   X.save(); X.translate(x, y); X.rotate(ang);
-  X.beginPath(); X.moveTo(0.5, 0); X.quadraticCurveTo(-L * 0.55, -L * 0.3, -L * 0.45, -L); X.quadraticCurveTo(-L * 0.1, -L * 0.75, L * 0.25, -0.1); X.closePath();
+  X.beginPath(); X.moveTo(0.35, 0.1); X.quadraticCurveTo(-L * 0.5, -L * 0.18, -L * 0.42, -L); X.quadraticCurveTo(-L * 0.12, -L * 0.7, 0.05, -0.05); X.closePath();
   X.fillStyle = col; X.fill();
-  if (sheen) ell(-L * 0.2, -L * 0.55, L * 0.2, L * 0.34, sheen, -0.15);
-  if (patch) ell(-L * 0.36, -L * 0.8, L * 0.15, L * 0.2, patch, -0.2);
+  if (sheen) ell(-L * 0.2, -L * 0.55, L * 0.15, L * 0.34, sheen, -0.15);
+  if (patch) ell(-L * 0.3, -L * 0.8, L * 0.12, L * 0.2, patch, -0.2);
   X.restore();
+}
+
+function wingFar(b, sx, sy, L, col) {
+  const f = Math.sin(b.ph - 0.6);
+  wing(sx - 0.2, sy + 0.1, -1.45 + 1.05 * f, L + 0.5 * Math.abs(Math.cos(b.ph - 0.6)), col, null);
+}
+function wingNear(b, sx, sy, L, col, patch, sheen) {
+  const k = Math.sin(b.ph);
+  wing(sx, sy, -1.45 + 1.05 * k, L + 0.7 * Math.abs(Math.cos(b.ph)), col, patch, sheen);
 }
 
 function bird(b) {
@@ -576,12 +584,13 @@ function bird(b) {
   if (!fl) X.rotate(pk * 0.45);
   const k = Math.sin(b.ph);
   poly([-1.5, 0.1, -4.2, 0.9 + (fl ? k * 0.6 : 0), -4.1, -0.4, -1.5, -0.6], "#15151c");
+  if (fl) { wingFar(b, 0.5, -1.0, 3.4, "#2a2f40"); }
   ell(0, 0, 2.1, 1.35, "#aab2c8");
   ell(0.9, 0.55, 1.45, 1.1, "#f0506a");
   ell(2.1, -0.6, 1.05, 1.0, "#14141a");
   poly([3.0, -0.8, 3.9, -0.45, 3.0, -0.2], "#2a2a2a");
   ell(2.3, -0.8, 0.18, 0.18, "#fff");
-  if (fl) { const f2 = Math.sin(b.ph - 0.6); wing(0.3, -0.6, -1.45 + 1.05 * f2, 3.4 + 0.5 * Math.abs(Math.cos(b.ph - 0.6)), "#2a2f40", null); wing(-0.2, -0.6, -1.45 + 1.05 * k, 3.4 + 0.7 * Math.abs(Math.cos(b.ph)), "#454b60", "#eef0f6"); }
+  if (fl) { wingNear(b, 0.5, -1.0, 3.4, "#454b60", null, "#eef0f6"); }
   else { ell(-0.6, -0.2, 1.4, 0.65, "#4a5068"); ln(-1.6, -0.1, 0.4, -0.1, 0.25, "#e8ecf4"); }
   if (!fl) { ln(-0.2, 1.1, -0.3, 1.9, 0.3, "#2a2a2a"); ln(0.5, 1.1, 0.6, 1.9, 0.3, "#2a2a2a"); }
   X.restore();
