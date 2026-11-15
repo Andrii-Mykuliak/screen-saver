@@ -1,0 +1,1130 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>зимове вікно</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2316275a'/%3E%3Cpath d='M16 4v24M5.6 10l20.8 12M5.6 22l20.8-12' stroke='%23dcebfa' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+  html, body { margin: 0; height: 100%; background: #0a0b10; overflow: hidden; }
+  canvas {
+    display: block; width: 100vw; height: 100vh; touch-action: none;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+</style>
+</head>
+<body>
+<canvas aria-hidden="true"></canvas>
+<script>
+"use strict";
+
+// ---------- helpers ----------
+const TAU = Math.PI * 2;
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+const lerp = (a, b, t) => a + (b - a) * t;
+const smooth = (t) => t * t * (3 - 2 * t);
+function hash(x, y, s) {
+  let h = (Math.imul(x | 0, 374761393) + Math.imul(y | 0, 668265263) + Math.imul(s | 0, 1274126177)) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+function noise2(x, y, s) {
+  const xi = Math.floor(x), yi = Math.floor(y);
+  const u = smooth(x - xi), v = smooth(y - yi);
+  return lerp(lerp(hash(xi, yi, s), hash(xi + 1, yi, s), u), lerp(hash(xi, yi + 1, s), hash(xi + 1, yi + 1, s), u), v);
+}
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const pack = (r, g, b) => (clamp(r | 0, 0, 255) << 16) | (clamp(g | 0, 0, 255) << 8) | clamp(b | 0, 0, 255);
+const cssCache = new Map();
+function css(c) {
+  c &= 0xf8f8f8;
+  let v = cssCache.get(c);
+  if (v === undefined) cssCache.set(c, (v = `rgb(${c >>> 16},${(c >>> 8) & 255},${c & 255})`));
+  return v;
+}
+const charCache = [];
+const chr = (code) => charCache[code] || (charCache[code] = String.fromCharCode(code));
+function dirGlyph(a) {
+  a = ((a % Math.PI) + Math.PI) % Math.PI;
+  if (a < Math.PI / 8 || a >= (7 * Math.PI) / 8) return 45;
+  if (a < (3 * Math.PI) / 8) return 92;
+  if (a < (5 * Math.PI) / 8) return 124;
+  return 47;
+}
+const RAMP = ".:;=+*#%@";
+const SEED = (Math.random() * 1e6) | 0;
+const QS = new URLSearchParams(location.search);
+
+// ---------- layout ----------
+const L = {};
+let canvas, ctx, sceneC, S, skyC, backC, fgC, fillC, fillCtx, fillImg, gridC;
+let kind, baseFill, baseG, baseC, amb, candleG, fgCells = [];
+let frostG, frostB, mist, mistB, clr;
+let W3 = 0, G, C, rushnyks = [];
+let X;                                   // the 2D context world helpers draw into
+
+function layout() {
+  const w = innerWidth, h = innerHeight, dpr = Math.min(devicePixelRatio || 1, 2);
+  const cw = clamp(Math.round(w / 260), 4, 8), ch = Math.round(cw * 1.5);
+  const cols = Math.ceil(w / cw), rows = Math.ceil(h / ch), n = cols * rows;
+  const SILL = 2;
+  let wh = Math.floor(rows * 0.8);
+  let ww = Math.round((wh * ch * 0.92) / cw);
+  if (ww > cols * 0.84) { ww = Math.floor(cols * 0.84); wh = Math.round((ww * cw) / (0.92 * ch)); }
+  const wx0 = Math.floor((cols - ww) / 2);
+  const wy0 = Math.max(1, Math.floor((rows - wh - SILL - 8) / 2));
+  const FX = Math.max(2, Math.round(ww / 28)), FY = Math.max(1, Math.round((FX * cw) / ch));
+  const MX = Math.max(1, Math.round(FX * 0.55)), MY = 1;
+  const gx0 = wx0 + FX, gy0 = wy0 + FY, gw = ww - 2 * FX, gh = wh - 2 * FY;
+  const mxs = gx0 + Math.floor((gw - MX) / 2);
+  const ph = Math.floor((gh - 2 * MY) / 3);
+  const r1 = gy0 + ph, r2 = r1 + MY + ph, r3 = r2 + MY;
+  const panes = [];
+  for (const [px, pw] of [[gx0, mxs - gx0], [mxs + MX, gx0 + gw - (mxs + MX)]]) {
+    panes.push({ x: px, y: gy0, w: pw, h: ph });
+    panes.push({ x: px, y: r1 + MY, w: pw, h: ph });
+    panes.push({ x: px, y: r3, w: pw, h: gy0 + gh - r3 });
+  }
+  Object.assign(L, {
+    w, h, dpr, cw, ch, cols, rows, n, SILL, wh, ww, wx0, wy0, FX, FY, MX, MY, gx0, gy0, gw, gh, mxs, r1, r2, panes,
+    SW: cols * 2, SH: rows * 3, GX0: gx0 * 2, GY0: gy0 * 3, GW: gw * 2, GH: gh * 3,
+  });
+  L.u = L.GH / (100 - Y0);
+  L.Wd = L.GW / L.u;
+}
+
+function mk(w, h) { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; }
+const Y0 = 24;
+const setW = (c) => c.setTransform(L.u, 0, 0, L.u, L.GX0, L.GY0 - Y0 * L.u);
+
+// ---------- static room: wall, frame, sill, rushnyks, candle, geranium ----------
+function buildCells() {
+  const { n, cols, rows, wx0, wy0, ww, wh, gx0, gy0, gw, gh, FX, FY, MX, MY, mxs, r1, r2, SILL } = L;
+  kind = new Uint8Array(n); baseFill = new Uint8ClampedArray(n * 3); baseG = new Uint16Array(n); baseC = new Uint32Array(n);
+  amb = new Float32Array(n); candleG = new Float32Array(n);
+  fgCells = []; rushnyks = [];
+  const inPane = (c, r) => L.panes.some((p) => c >= p.x && c < p.x + p.w && r >= p.y && r < p.y + p.h);
+  const sillTop = wy0 + wh;
+  const fcx = wx0 + Math.round(ww * 0.2), fcy = sillTop - 5;
+  L.flame = { c: fcx, r: fcy };
+  const sig = ww * 0.2;
+  const band = sillTop + SILL;
+  const rw = Math.min(6, wx0 - 4);
+  const hasRush = rw >= 3;
+  const set = (i, f, g, col) => { baseFill[i * 3] = f[0]; baseFill[i * 3 + 1] = f[1]; baseFill[i * 3 + 2] = f[2]; baseG[i] = g; baseC[i] = col; };
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const i = r * cols + c;
+      const inWin = c >= wx0 && c < wx0 + ww && r >= wy0 && r < wy0 + wh;
+      // ambient light spilling from the window and warmth from the candle
+      const dxw = Math.max(wx0 - c, 0, c - (wx0 + ww - 1)), dyw = Math.max(wy0 - r, 0, r - (sillTop - 1)) * 1.5;
+      amb[i] = Math.exp(-Math.hypot(dxw, dyw) / (wh * 0.55));
+      const dx = c - fcx, dy = (r - fcy) * 1.5;
+      candleG[i] = Math.exp(-(dx * dx + dy * dy) / (2 * sig * sig));
+
+      if (inWin) {
+        if (inPane(c, r)) { kind[i] = 3; continue; }
+        kind[i] = 1;
+        const vert = c < gx0 || c >= gx0 + gw || (c >= mxs && c < mxs + MX);
+        const horiz = r < gy0 || r >= gy0 + gh || (r >= r1 && r < r1 + MY) || (r >= r2 && r < r2 + MY);
+        const outer = c === wx0 || c === wx0 + ww - 1 || r === wy0 || r === sillTop - 1;
+        const inner = c === gx0 - 1 || c === gx0 + gw || r === gy0 - 1 || r === gy0 + gh;
+        const f = outer ? [38, 72, 128] : inner ? [74, 120, 190] : [50, 92, 160];
+        const g = vert && horiz ? 43 : vert ? 124 : 61;
+        set(i, f, g, pack(f[0] * 1.5 + 20, f[1] * 1.5 + 22, f[2] * 1.4 + 26));
+        continue;
+      }
+      if (r >= sillTop && r < sillTop + SILL && c >= wx0 - 3 && c < wx0 + ww + 3) {
+        kind[i] = 2;
+        const top = r === sillTop;
+        set(i, top ? [150, 108, 74] : [92, 64, 46], top ? 95 : 45, top ? pack(188, 146, 104) : pack(130, 94, 70));
+        continue;
+      }
+      // wall
+      const nz = noise2(c * 0.18, r * 0.27, SEED) * 0.5 + hash(c, r, SEED) * 0.5;
+      if (r >= band) {
+        kind[i] = 4;
+        if (r === band) {
+          set(i, [30, 54, 104], (c & 1) ? 62 : 60, pack(226, 176, 70));
+        } else {
+          const f = [24 + nz * 12, 46 + nz * 14, 96 + nz * 18];
+          set(i, f, hash(c, r, SEED + 3) < 0.05 ? 46 : 0, pack(120, 150, 205));
+        }
+      } else {
+        kind[i] = 0;
+        const f = [64 + nz * 14, 58 + nz * 12, 64 + nz * 12];
+        set(i, f, hash(c, r, SEED + 9) < 0.045 ? (hash(c, r, 4) < 0.5 ? 46 : 58) : 0, pack(f[0] + 40, f[1] + 38, f[2] + 40));
+      }
+    }
+  }
+
+  // embroidered rushnyks hang on both sides of the window
+  if (hasRush) {
+    for (const side of [-1, 1]) {
+      const x0 = side < 0 ? wx0 - 2 - rw : wx0 + ww + 2;
+      const y1 = wy0 + Math.round(wh * 0.92);
+      rushnyks.push({ x0, y1 });
+      for (let r = wy0; r <= y1; r++) {
+        for (let k = 0; k < rw; k++) {
+          const i = r * cols + x0 + k;
+          kind[i] = 5;
+          const lr = r - wy0, ci = (rw - 1) / 2, m = lr % 8, hw = (m < 4 ? m : 7 - m) * (ci / 3);
+          const edge = k === 0 || k === rw - 1;
+          let g = 0, col = pack(200, 40, 44);
+          if (r === y1) { set(i, [60, 54, 60], 124, pack(222, 212, 184)); continue; }
+          if (edge) { g = 73; col = pack(34, 30, 38); }
+          else if (Math.abs(Math.abs(k - ci) - hw) < 0.75) { g = 120; col = pack(212, 44, 48); }
+          else if (lr % 8 === 4 && Math.abs(k - ci) < 0.6) { g = 43; col = pack(40, 34, 42); }
+          set(i, [206, 196, 168], g, col);
+        }
+      }
+    }
+  }
+
+  // foreground objects standing on the sill, in front of the glass
+  const put = (c, r, f, g, col) => { if (c >= 0 && c < cols && r >= 0 && r < rows) fgCells.push({ i: r * cols + c, f, g, col }); };
+  for (let k = 0; k < 3; k++) put(fcx, sillTop - 4 + k, [226, 214, 184], 124, pack(176, 156, 118));
+  for (let k = -1; k <= 1; k++) put(fcx + k, sillTop - 1, [150, 112, 52], 95, pack(220, 180, 90));
+  put(fcx, sillTop - 1, [150, 112, 52], 61, pack(220, 180, 90));
+  const pcx = wx0 + Math.round(ww * 0.78);
+  for (let k = -2; k <= 2; k++) put(pcx + k, sillTop - 2, [176, 98, 60], 61, pack(224, 150, 100));
+  for (let k = -1; k <= 1; k++) put(pcx + k, sillTop - 1, [150, 78, 48], 35, pack(196, 116, 76));
+  for (let dy = 0; dy < 5; dy++) {
+    for (let dx = -4; dx <= 4; dx++) {
+      const e = (dx / 4.3) ** 2 + ((dy - 2) / 2.7) ** 2;
+      if (e > 1 || hash(dx, dy, SEED + 21) < 0.2) continue;
+      const bloom = hash(dx, dy, SEED + 22) < 0.22;
+      put(pcx + dx, sillTop - 3 - dy, bloom ? [150, 36, 44] : [22, 58, 36], bloom ? 64 : "%&*".charCodeAt((hash(dx, dy, 5) * 3) | 0), bloom ? pack(240, 88, 96) : pack(76, 156, 88));
+    }
+  }
+}
+
+// ---------- frost: fern-like branches grown from the pane edges ----------
+function genFrost() {
+  const { n, cols } = L;
+  frostG = new Uint16Array(n); frostB = new Float32Array(n).fill(1e9);
+  mist = new Float32Array(n); mistB = new Float32Array(n); clr = new Float32Array(n);
+  const rnd = mulberry32(SEED + 7);
+  for (const p of L.panes) {
+    const mn = Math.min(p.w, p.h * 1.5), delay = rnd() * 5;
+    for (let r = p.y; r < p.y + p.h; r++) {
+      for (let c = p.x; c < p.x + p.w; c++) {
+        const i = r * cols + c;
+        const dE = Math.min(c - p.x, p.x + p.w - 1 - c, (r - p.y) * 1.5, (p.y + p.h - 1 - r) * 1.5);
+        let m = clamp(1 - dE / (mn * 0.16), 0, 1);
+        m *= 0.45 + 0.75 * noise2(c * 0.22, r * 0.15, SEED);
+        m += 0.16 * ((r - p.y) / p.h) * clamp(1 - dE / (mn * 0.45), 0, 1);
+        mist[i] = clamp(m, 0, 1);
+        mistB[i] = delay + dE * 0.5;
+      }
+    }
+    const grow = (x, y, a, len, depth, t0) => {
+      let tr = 0, next = 1.4 + rnd() * 0.8;
+      while (tr < len) {
+        x += Math.cos(a) * 0.5; y += (Math.sin(a) * 0.5) / 1.5; tr += 0.5;
+        a += (rnd() - 0.5) * 0.12;
+        const c = Math.floor(x), r = Math.floor(y);
+        if (c < p.x || c >= p.x + p.w || r < p.y || r >= p.y + p.h) break;
+        const i = r * cols + c, t = t0 + tr * 0.45;
+        if (t < frostB[i]) { frostB[i] = t; frostG[i] = tr > len - 0.8 && rnd() < 0.5 ? 42 : dirGlyph(a); }
+        if (depth < 3 && tr > next) {
+          next += 2.2 + rnd() * 1.2;
+          const sp = 0.78 - 0.1 * depth, sl = len * (0.42 - 0.07 * depth);
+          grow(x, y, a + sp, sl, depth + 1, t); grow(x, y, a - sp, sl, depth + 1, t);
+        }
+      }
+    };
+    for (let x = p.x + 2; x < p.x + p.w - 1; x += 8 + rnd() * 5) {
+      grow(x, p.y + 0.01, Math.PI / 2 + (rnd() - 0.5) * 0.8, mn * (0.05 + 0.1 * rnd()), 0, delay + rnd() * 8);
+      grow(x, p.y + p.h - 0.01, -Math.PI / 2 + (rnd() - 0.5) * 0.8, mn * (0.08 + 0.16 * rnd()), 0, delay + rnd() * 8);
+    }
+    for (let y = p.y + 1.5; y < p.y + p.h - 1; y += 5 + rnd() * 3) {
+      grow(p.x + 0.01, y, (rnd() - 0.5) * 0.8, mn * (0.05 + 0.1 * rnd()), 0, delay + rnd() * 8);
+      grow(p.x + p.w - 0.01, y, Math.PI + (rnd() - 0.5) * 0.8, mn * (0.05 + 0.1 * rnd()), 0, delay + rnd() * 8);
+    }
+    const corners = [[p.x, p.y, 0], [p.x + p.w - 0.01, p.y, 1], [p.x, p.y + p.h - 0.01, 3], [p.x + p.w - 0.01, p.y + p.h - 0.01, 2]];
+    for (const [cx, cy, q] of corners) {
+      if (rnd() < 0.3) continue;
+      const base = [0, Math.PI / 2, Math.PI, -Math.PI / 2][q];
+      for (let k = 0; k < 6; k++) grow(cx, cy, base + 0.1 + (k / 5) * (Math.PI / 2 - 0.2), mn * (0.2 + 0.1 * rnd()), 0, delay + 2 + rnd() * 3);
+    }
+  }
+}
+
+// ---------- the world outside: drawn in units of 1/100 of the glass height ----------
+const poly = (pts, fill) => { X.beginPath(); X.moveTo(pts[0], pts[1]); for (let k = 2; k < pts.length; k += 2) X.lineTo(pts[k], pts[k + 1]); X.closePath(); X.fillStyle = fill; X.fill(); };
+const ell = (x, y, rx, ry, fill, rot = 0) => { X.beginPath(); X.ellipse(x, y, Math.max(0.01, rx), Math.max(0.01, ry), rot, 0, TAU); X.fillStyle = fill; X.fill(); };
+const ln = (x1, y1, x2, y2, w, col) => { X.beginPath(); X.moveTo(x1, y1); X.lineTo(x2, y2); X.lineWidth = w; X.strokeStyle = col; X.lineCap = "round"; X.stroke(); };
+const rect = (x, y, w, h, fill) => { X.fillStyle = fill; X.fillRect(x, y, w, h); };
+function glow(x, y, r, rgb, a) {
+  const g = X.createRadialGradient(x, y, 0, x, y, r);
+  g.addColorStop(0, `rgba(${rgb},${a})`); g.addColorStop(1, `rgba(${rgb},0)`);
+  X.globalCompositeOperation = "lighter"; X.fillStyle = g; X.fillRect(x - r, y - r, r * 2, r * 2); X.globalCompositeOperation = "source-over";
+}
+const depthScale = (y) => 0.7 + (y - 70) * 0.016;
+
+let HOUSES = {}, WELL = {}, TIPS = [], STARS = [], FLAKES = [];
+const farY = (x) => 60 + 4 * Math.sin(x * 0.07 + 1) + 3 * Math.sin(x * 0.13 + 2);
+
+function buildWorld() {
+  const Wd = L.Wd;
+  HOUSES = {
+    A: { cx: 0.22 * Wd, base: 74, w: 18, hgt: 8.5, wins: [-5, 5.2], door: { dx: 0, w: 3.2, h: 6, open: 0 }, chim: 5 },
+    B: { cx: 0.66 * Wd, base: 77, w: 20, hgt: 9, wins: [-5.5], door: { dx: 5.2, w: 3.4, h: 6.4, open: 0 }, chim: -4 },
+  };
+  for (const h of Object.values(HOUSES)) {
+    h.door.x = h.cx + h.door.dx;
+    h.winRects = h.wins.map((dx) => ({ x: h.cx + dx - 2, y: h.base - h.hgt + 2.2, w: 4, h: 3.6 }));
+    h.smoke = { x: h.cx + h.chim, y: h.base - h.hgt - 8.6 };
+  }
+  HOUSES.A.winRects.push({ x: HOUSES.A.cx - 2, y: HOUSES.A.base - 5.8, w: 0, h: 0 });
+  HOUSES.A.winRects.pop();
+  WELL = { x: 0.4 * Wd, y: 80.5, a: 0.62 };
+  const rnd = mulberry32(SEED + 31);
+  STARS = [];
+  for (let k = 0; k < 44; k++) STARS.push({ x: rnd() * Wd, y: Y0 + rnd() * 34, ph: rnd() * TAU, s: 0.5 + rnd() * 0.5 });
+  FLAKES = [];
+  const nf = Math.round((Wd * 76) / 40);
+  for (let k = 0; k < nf; k++) FLAKES.push({ x: rnd() * (Wd + 10) - 5, y: Y0 - 2 + rnd() * (104 - Y0), z: 0.2 + rnd() * 0.8, ph: rnd() * TAU });
+}
+
+function house(h) {
+  const { cx, base, w, hgt } = h, top = base - hgt, l = cx - w / 2, r = cx + w / 2;
+  ell(cx, base + 0.4, w * 0.62, 1.7, "rgba(120,138,178,0.55)");
+  rect(l, top, w, hgt, "#b4bfdc");
+  rect(r - 3.6, top, 3.6, hgt, "#8e9bc2");
+  rect(l, base - 1.5, w, 1.5, "#3e5c98");
+  const roof = [l - 2.0, top + 1.5, l + 3.5, top - 7.4, r - 3.5, top - 7.4, r + 2.0, top + 1.5];
+  poly(roof, "#8c7448");
+  poly([l - 1.4, top + 0.3, l + 3.4, top - 7.6, r - 3.4, top - 7.6, r + 1.4, top + 0.3], "#e9eef8");
+  for (let x = l - 1.2; x < r + 1.4; x += 1.7) ell(x, top + 0.5 + 0.2 * Math.sin(x * 3), 1.0, 0.95, "#e9eef8");
+  for (let x = l - 0.8; x < r + 1.2; x += 3.9) poly([x - 0.3, top + 1.0, x + 0.3, top + 1.0, x, top + 2.5 + 1.0 * hash(x * 9, 1, SEED)], "#dfe8f6");
+  for (const wr of h.winRects) {
+    rect(wr.x - 0.6, wr.y - 0.6, wr.w + 1.2, wr.h + 1.2, "#2d5392");
+    rect(wr.x, wr.y, wr.w, wr.h, "#ffcf70");
+    rect(wr.x + wr.w / 2 - 0.2, wr.y, 0.4, wr.h, "#2d5392"); rect(wr.x, wr.y + wr.h / 2 - 0.2, wr.w, 0.4, "#2d5392");
+    rect(wr.x - 1.9, wr.y - 0.4, 1.2, wr.h + 0.8, "#3f6bb0"); rect(wr.x + wr.w + 0.7, wr.y - 0.4, 1.2, wr.h + 0.8, "#3f6bb0");
+    rect(wr.x - 0.9, wr.y + wr.h + 0.6, wr.w + 1.8, 0.6, "#e9eef8");
+    glow(wr.x + wr.w / 2, base + 2.5, 8, "255,196,96", 0.2);
+  }
+  const d = h.door;
+  rect(d.x - d.w / 2 - 0.5, base - d.h - 0.5, d.w + 1, d.h + 0.5, "#2d5392");
+  rect(d.x - d.w / 2, base - d.h, d.w, d.h, "#59402c");
+  ell(d.x + d.w * 0.28, base - d.h * 0.45, 0.28, 0.28, "#d8b25a");
+  rect(d.x - d.w / 2 - 1.3, base, d.w + 2.6, 0.7, "#e9eef8");
+  const cxm = h.smoke.x;
+  rect(cxm - 1.2, h.smoke.y, 2.4, 3.4, "#766a70");
+  ell(cxm, h.smoke.y, 1.6, 0.8, "#e9eef8");
+}
+
+function church(cx, base) {
+  const dome = (x, y, w, hh, roofCol) => {
+    rect(x - w / 2, y - hh, w, hh, "#6f6068");
+    rect(x - w / 2, y - hh, 0.8, hh, "#82727a");
+    rect(x - 0.7, y - hh * 0.65, 1.4, 1.7, "#ffcf70");
+    const t = y - hh;
+    X.beginPath(); X.moveTo(x - w / 2 - 0.9, t); X.quadraticCurveTo(x - w * 0.3, t - w * 0.62, x, t - w * 1.15); X.quadraticCurveTo(x + w * 0.3, t - w * 0.62, x + w / 2 + 0.9, t); X.closePath();
+    X.fillStyle = roofCol; X.fill();
+    X.beginPath(); X.moveTo(x - w / 2 - 0.6, t - 0.5); X.quadraticCurveTo(x - w * 0.28, t - w * 0.6, x, t - w * 1.15); X.quadraticCurveTo(x + w * 0.28, t - w * 0.6, x + w / 2 + 0.6, t - 0.5);
+    X.quadraticCurveTo(x, t - w * 0.45, x - w / 2 - 0.6, t - 0.5); X.fillStyle = "#e9eef8"; X.fill();
+    const ty = t - w * 1.15;
+    ln(x, ty, x, ty - 2.4, 0.4, "#d8b25a"); ln(x - 0.8, ty - 1.4, x + 0.8, ty - 1.4, 0.4, "#d8b25a");
+  };
+  rect(cx - 8, base - 4.2, 16, 4.2, "#6f6068");
+  rect(cx - 8.4, base - 4.6, 16.8, 0.8, "#e9eef8");
+  for (const dx of [-5.5, -2.7, 2.7, 5.5]) rect(cx + dx - 0.5, base - 3, 1, 1.8, "#ffcf70");
+  dome(cx - 5.6, base - 4.6, 4.4, 3.4, "#55607a");
+  dome(cx + 5.6, base - 4.6, 4.4, 3.4, "#55607a");
+  dome(cx, base - 4.6, 5.6, 6.2, "#4d587a");
+}
+
+function bakeSky() {
+  X = skyC.getContext("2d"); setW(X);
+  const Wd = L.Wd;
+  const g = X.createLinearGradient(0, Y0 - 4, 0, 72);
+  g.addColorStop(0, "#050a26"); g.addColorStop(0.45, "#16275a"); g.addColorStop(0.8, "#3a5288"); g.addColorStop(1, "#8097c0");
+  X.fillStyle = g; X.fillRect(-6, Y0 - 10, Wd + 12, 130);
+  const w = X.createLinearGradient(0, 50, 0, 72);
+  w.addColorStop(0, "rgba(230,140,100,0)"); w.addColorStop(1, "rgba(235,150,110,0.26)");
+  X.fillStyle = w; X.fillRect(-6, 50, Wd + 12, 24);
+  const mx = 0.17 * Wd, my = 38;
+  const h = X.createRadialGradient(mx, my, 3, mx, my, 24);
+  h.addColorStop(0, "rgba(190,205,240,0.4)"); h.addColorStop(1, "rgba(190,205,240,0)");
+  X.fillStyle = h; X.fillRect(mx - 24, my - 24, 48, 48);
+  ell(mx, my, 5.4, 5.4, "#f0efdc");
+  ell(mx - 1.6, my - 1, 1.3, 1.1, "rgba(170,170,155,0.5)"); ell(mx + 1.8, my + 1.6, 1.6, 1.3, "rgba(170,170,155,0.45)"); ell(mx + 0.4, my - 2.6, 0.9, 0.8, "rgba(170,170,155,0.4)");
+}
+
+function bakeBack() {
+  X = backC.getContext("2d"); setW(X); X.clearRect(-1e3, -1e3, 3e3, 3e3);
+  const Wd = L.Wd, rnd = mulberry32(SEED + 5);
+  // far hill and the forest on it
+  X.beginPath(); X.moveTo(-6, 110);
+  for (let x = -6; x <= Wd + 6; x += 1) X.lineTo(x, farY(x));
+  X.lineTo(Wd + 6, 110); X.closePath();
+  const fh = X.createLinearGradient(0, 56, 0, 80); fh.addColorStop(0, "#7d90ba"); fh.addColorStop(1, "#aab8d6");
+  X.fillStyle = fh; X.fill();
+  for (let x = -4; x < Wd + 4; x += 1.2) {
+    const hh = 2.6 + 3.6 * rnd(), y = farY(x) + 1.2;
+    poly([x - hh * 0.28, y, x + hh * 0.28, y, x, y - hh], "#2c4868");
+    poly([x - hh * 0.12, y - hh * 0.55, x + hh * 0.12, y - hh * 0.55, x, y - hh], "#d8e2f2");
+  }
+  // village ground with the church hill
+  const cxC = 0.87 * Wd;
+  const gY = (x) => 71.5 - 6.2 * Math.exp(-(((x - cxC) / 16) ** 2)) + 0.5 * Math.sin(x * 0.2);
+  X.beginPath(); X.moveTo(-6, 110);
+  for (let x = -6; x <= Wd + 6; x += 1) X.lineTo(x, gY(x));
+  X.lineTo(Wd + 6, 110); X.closePath();
+  const gg = X.createLinearGradient(0, 64, 0, 100); gg.addColorStop(0, "#a9b8d8"); gg.addColorStop(0.35, "#c3d0e8"); gg.addColorStop(1, "#dbe6f6");
+  X.fillStyle = gg; X.fill();
+  church(cxC, gY(cxC) + 1.2);
+  // snow drifts and the trodden road
+  for (let k = 0; k < 16; k++) {
+    const y = 75 + rnd() * 24, x = rnd() * Wd, len = 6 + rnd() * 16;
+    X.beginPath(); X.moveTo(x, y); X.quadraticCurveTo(x + len / 2, y - 1.4 - rnd() * 1.4, x + len, y + 0.2);
+    X.lineWidth = 0.9; X.strokeStyle = "rgba(244,248,255,0.65)"; X.stroke();
+    X.beginPath(); X.moveTo(x, y + 0.9); X.quadraticCurveTo(x + len / 2, y - 0.2, x + len, y + 1.1);
+    X.lineWidth = 0.5; X.strokeStyle = "rgba(138,156,198,0.5)"; X.stroke();
+  }
+  for (const off of [-0.8, 0.8]) {
+    X.beginPath();
+    for (let x = -6; x <= Wd + 6; x += 2) { const y = 86 + off + 1.6 * Math.sin(x * 0.08 + 0.5); x === -6 ? X.moveTo(x, y) : X.lineTo(x, y); }
+    X.lineWidth = 0.5; X.strokeStyle = "rgba(128,148,192,0.6)"; X.stroke();
+  }
+  house(HOUSES.A); house(HOUSES.B);
+  // wicker fence with clay pots on the posts
+  const fence = (x0, x1, y) => {
+    for (let x = x0; x <= x1; x += 1.3) {
+      ln(x, y, x, y - 5, 0.55, "#5e4a3a");
+      ell(x, y - 5.1, 0.55, 0.4, "#f0f4fb");
+    }
+    for (const yy of [y - 1.4, y - 3.2]) {
+      X.beginPath(); X.lineWidth = 0.5; X.strokeStyle = "#7a5e44";
+      for (let x = x0; x <= x1; x += 0.65) { const q = yy + 0.5 * Math.sin(x * 2.4); x === x0 ? X.moveTo(x, q) : X.lineTo(x, q); }
+      X.stroke();
+    }
+    for (const x of [x0 + (x1 - x0) * 0.2, x0 + (x1 - x0) * 0.7]) {
+      ell(x, y - 6.2, 1.1, 1.3, "#a9603a"); ell(x, y - 7.2, 0.7, 0.35, "#e9eef8");
+    }
+  };
+  fence(0.05 * Wd, 0.16 * Wd, 80.3);
+  fence(0.27 * Wd, 0.35 * Wd, 80.3);
+  // well
+  const w = WELL;
+  rect(w.x - 2.6, w.y - 3.6, 5.2, 3.6, "#74604c"); for (const dy of [-2.6, -1.4, -0.2]) rect(w.x - 2.6, w.y + dy, 5.2, 0.25, "#4d3d30");
+  rect(w.x - 2.9, w.y - 4.3, 5.8, 0.9, "#e9eef8");
+  ln(w.x + 1.6, w.y - 3.8, w.x + 1.6, w.y - 9.6, 0.8, "#4d3d30");
+  ln(w.x + 1.0, w.y - 9.4, w.x + 2.2, w.y - 9.4, 0.5, "#4d3d30");
+}
+
+function bakeFg() {
+  X = fgC.getContext("2d"); setW(X); X.clearRect(-1e3, -1e3, 3e3, 3e3);
+  const Wd = L.Wd, rnd = mulberry32(SEED + 17);
+  // snow bank along the bottom
+  X.beginPath(); X.moveTo(-6, 110); X.lineTo(-6, 98.5);
+  for (let x = -6; x <= Wd + 6; x += 2) X.lineTo(x, 98.4 - 1.1 * Math.sin(x * 0.11) - 0.6 * Math.sin(x * 0.31 + 1));
+  X.lineTo(Wd + 6, 110); X.closePath(); X.fillStyle = "#e6eefa"; X.fill();
+  // bare tree on the left with snow on its branches
+  TIPS = [];
+  const tree = (x, y, a, len, w, depth) => {
+    const x2 = x + Math.cos(a) * len, y2 = y + Math.sin(a) * len;
+    ln(x, y, x2, y2, w, "#2a1e1e");
+    if (Math.abs(Math.cos(a)) > 0.3 && depth > 0) ln(x, y - w * 0.45, x2, y2 - w * 0.45, Math.max(0.3, w * 0.45), "rgba(244,248,255,0.95)");
+    if (depth >= 5) { if (y2 < 70) TIPS.push({ x: x2, y: y2 - 0.4 }); return; }
+    const n = depth === 0 ? 3 : 2;
+    for (let k = 0; k < n; k++) {
+      const da = (k - (n - 1) / 2) * (0.5 + rnd() * 0.4) + (rnd() - 0.5) * 0.3;
+      tree(x2, y2, a + da, len * (0.7 + rnd() * 0.12), w * 0.66, depth + 1);
+    }
+  };
+  tree(0.05 * Wd, 99.5, -Math.PI / 2, 17, 2.6, 0);
+  // spruce on the right
+  const sx = 0.96 * Wd;
+  for (let k = 0; k < 7; k++) {
+    const y = 99 - k * 4.6, w = 11 - k * 1.4;
+    poly([sx - w, y, sx + w, y, sx, y - 9], "#16383a");
+    poly([sx - w * 0.62, y - 3.4, sx + w * 0.62, y - 3.4, sx, y - 9], "#e9eef8");
+    poly([sx - w * 0.5, y - 3.9, sx + w * 0.5, y - 3.9, sx, y - 9.4], "#1d4a46");
+  }
+  poly([sx - 0.2, 99, sx + 0.2, 99, sx, 60], "#16383a");
+}
+
+function bakeAll() {
+  skyC = mk(L.SW, L.SH); backC = mk(L.SW, L.SH); fgC = mk(L.SW, L.SH);
+  bakeSky(); bakeBack(); bakeFg();
+  X = S; setW(X);
+}
+
+// ---------- people, animals, vehicles ----------
+function person(o) {
+  const s = o.s, w = o.walk || 0, ph = o.ph || 0;
+  const bob = -Math.abs(Math.sin(ph)) * 0.4 * w;
+  X.save(); X.translate(o.x, o.y);
+  if (o.rot) X.rotate(o.rot * o.dir);
+  X.scale(o.dir * s, s); X.translate(0, bob);
+  if (o.alpha !== undefined) X.globalAlpha = o.alpha;
+  const boot = "#251a18", cc = o.coat;
+  if (!o.sit) {
+    for (const k of [0, 1]) {
+      const a = Math.sin(ph + k * Math.PI) * w, hx = k ? 0.6 : -0.4;
+      ln(hx, -5.4, hx + a * 2.0, -0.4 - Math.max(0, Math.cos(ph + k * Math.PI)) * 0.7 * w, 1.5, boot);
+    }
+  } else {
+    ln(0.4, -2.0, 3.4, -2.0, 1.4, boot); ln(3.4, -2.0, 3.6, 0.2, 1.3, boot);
+  }
+  const hem = o.skirt ? -3.4 : -5.4;
+  if (o.skirt) poly([-3.3, hem, 3.3, hem, 1.9, -10.6, -1.9, -10.6], cc);
+  else poly([-2.4, hem, 2.4, hem, 1.9, -10.6, -1.9, -10.6], cc);
+  if (o.trim) ln(-(o.skirt ? 3.3 : 2.4), hem, o.skirt ? 3.3 : 2.4, hem, 1.0, o.trim);
+  ln(-2.0, -7.7, 2.0, -7.7, 0.75, o.belt || "#b32d2d");
+  const sa = Math.sin(ph) * 0.7 * w;
+  if (o.arms === "up") { ln(0.8, -10, 2.8, -13.6, 1.25, cc); ln(-0.6, -10, -2.4, -13.8, 1.25, cc); }
+  else if (o.arms === "carry") { ln(0.6, -10, 2.0, -8.0, 1.25, cc); ln(-0.4, -10, 1.2, -8.2, 1.25, cc); }
+  else { ln(0.5, -10, 1.0 + sa, -7.6, 1.25, cc); ln(-0.3, -10, -0.6 - sa, -7.6, 1.25, cc); }
+  const skin = "#e2b896";
+  ell(0.2, -12.2, 1.5, 1.65, skin);
+  switch (o.hat) {
+    case "fur": ell(0.1, -13.2, 2.0, 1.25, "#34261f"); ell(0.2, -12.5, 1.7, 0.5, "#34261f"); break;
+    case "cap": ell(0.1, -13.2, 1.8, 0.95, "#3a4a6a"); ln(0.2, -12.7, 2.1, -12.7, 0.5, "#2a3650"); break;
+    case "kerch":
+      ell(0, -12.7, 1.8, 1.55, "#c8323c"); ell(-0.2, -12.9, 1.0, 0.8, "#e8d8a8");
+      poly([-1.7, -12.4, -2.9, -11.1, -1.2, -11.4], "#c8323c");
+      break;
+    case "wreath":
+      ell(-0.2, -12.6, 1.5, 1.7, "#2c2020");
+      ell(0.2, -12.2, 1.4, 1.5, skin);
+      for (let k = 0; k < 6; k++) { const a = Math.PI + (k / 5) * Math.PI; ell(0.1 + Math.cos(a) * 1.7, -13.1 + Math.sin(a) * 1.3, 0.55, 0.55, ["#e84a64", "#f0c24a", "#4a82d8"][k % 3]); }
+      ln(-1.4, -12.6, -2.6 + Math.sin(ph) * 0.3, -8.6, 0.45, "#e84a64"); ln(-1.0, -12.6, -1.8, -8.4, 0.45, "#4a82d8"); ln(-1.7, -12.6, -3.0, -9.0, 0.45, "#f0c24a");
+      break;
+    case "goat":
+      ell(0.7, -12.5, 2.4, 2.0, "#7a5230");
+      ln(0.2, -14.1, -1.2, -16.6, 0.65, "#e8dfc8"); ln(1.4, -14.1, 2.5, -16.7, 0.65, "#e8dfc8");
+      ln(2.3, -11.6, 2.5, -9.6, 0.5, "#e8dfc8"); ell(2.5, -12.2, 0.35, 0.3, "#1a1210");
+      break;
+  }
+  if (o.yoke) {
+    ln(-3.8, -10.2, 3.8, -10.2, 0.7, "#6a4c34");
+    for (const side of [-1, 1]) {
+      const bx = side * 3.8 + Math.sin(ph * 0.5 + side) * 0.4 * (w + 0.2);
+      ln(side * 3.8, -10.1, bx, -5.4, 0.25, "#6a4c34");
+      poly([bx - 1.3, -5.4, bx + 1.3, -5.4, bx + 1.0, -3.2, bx - 1.0, -3.2], "#7a5636");
+      rect(bx - 1.3, -5.4, 2.6, 0.5, "#6fa6e0");
+    }
+  }
+  X.restore();
+}
+
+function horse(x, y, dir, s, ph) {
+  X.save(); X.translate(x, y); X.scale(dir * s, s);
+  const body = "#5a3828", dark = "#3c261c";
+  const leg = (hx, off) => {
+    const a = Math.sin(ph + off) * 0.7, lift = Math.max(0, Math.cos(ph + off));
+    ln(hx, -7, hx + a * 1.2, -3.9, 1.1, body);
+    ln(hx + a * 1.2, -3.9, hx + a * 2.4, -0.5 - lift * 1.5, 0.9, dark);
+  };
+  leg(-3.8, Math.PI); leg(3.6, 0); leg(-4.8, 0); leg(2.6, Math.PI);
+  ln(-5, -9.2, -7.6, -5.4 + Math.sin(ph * 0.7) * 0.6, 1.0, dark);
+  ell(0, -8.4, 5.4, 2.8, body);
+  poly([3.6, -9.6, 6.0, -13.4, 7.6, -12.6, 5.6, -8.4], body);
+  ell(8.5, -12.9, 1.9, 1.0, "#4a2e22", 0.5);
+  poly([7.4, -13.7, 7.9, -15.2, 8.5, -13.8], dark);
+  ln(3.8, -10.4, 6.0, -13.6, 0.9, dark);
+  ell(4.6, -10.4, 1.2, 2.2, "#b0343c", -0.5);
+  for (let k = 0; k < 3; k++) ell(3.9 + k * 0.1, -8.6 + k * 0.9, 0.35, 0.35, "#f0c24a");
+  X.restore();
+}
+
+function sleigh(x, y, dir, s, ph) {
+  X.save(); X.translate(x, y); X.scale(dir * s, s);
+  ln(2.8, -7.4, -12.4, -4.2, 0.55, "#4a3426"); ln(3.4, -6.6, -12.4, -3.6, 0.55, "#4a3426");
+  X.beginPath(); X.moveTo(-9.0, -2.4); X.quadraticCurveTo(-8.6, -0.2, -11, -0.3); X.lineTo(-22, -0.3); X.lineWidth = 0.8; X.strokeStyle = "#2c201c"; X.stroke();
+  ln(-12.6, -3.2, -12.4, -0.4, 0.5, "#2c201c"); ln(-20.6, -3.2, -20.8, -0.4, 0.5, "#2c201c");
+  poly([-22.6, -3.2, -11.0, -3.2, -9.8, -6.8, -11.6, -7.2, -22.8, -6.2], "#982c34");
+  ln(-22.2, -4.6, -11, -4.6, 0.8, "#2d5aa4");
+  poly([-22.8, -6.2, -23.4, -10.4, -21.4, -10.2, -21.2, -6.2], "#8a2830");
+  // riders: a coachman and a girl wrapped in sheepskin
+  const sit = (bx, hat, coat) => {
+    poly([bx - 1.4, -6.3, bx + 1.4, -6.3, bx + 1.1, -11.4, bx - 1.1, -11.4], coat);
+    ell(bx + 0.1, -12.7, 1.4, 1.5, "#e2b896");
+    if (hat === "fur") { ell(bx, -13.7, 1.9, 1.15, "#34261f"); } else { ell(bx, -13.0, 1.7, 1.45, "#c8323c"); }
+  };
+  sit(-14.4, "fur", "#c9a878"); sit(-19.6, "kerch", "#d8c8a4");
+  ell(-17.2, -7.0, 6.2, 1.4, "#e6dfd0");
+  ln(-13.2, -10, 3.2, -10.4, 0.2, "#2a2018");
+  ell(-9.6, -8.2, 0.6, 0.6, "#ffd87a");
+  X.restore();
+}
+
+function bird(b) {
+  X.save(); X.translate(b.x, b.y); X.scale(b.dir * 1.15, 1.15);
+  const fl = b.flying;
+  poly([-1.5, 0.1, -3.7, 0.9 + (fl ? Math.sin(b.ph * 3) * 0.5 : 0), -3.6, -0.3, -1.5, -0.5], "#1c1c24");
+  ell(0, 0, 1.9, 1.25, "#7a8094");
+  ell(0.8, 0.45, 1.2, 0.95, "#e0465a");
+  ell(1.9, -0.55, 0.95, 0.9, "#14141a");
+  poly([2.7, -0.7, 3.5, -0.4, 2.7, -0.2], "#2a2a2a");
+  if (fl) { const k = Math.sin(b.ph * 3); ln(-0.2, -0.5, -1.2, -2.1 * k - 0.4, 0.8, "#3a3f52"); ln(0.4, -0.5, 1.0, -2.0 * k - 0.4, 0.8, "#4a4f62"); }
+  else ell(-0.5, -0.2, 1.2, 0.55, "#3a3f52");
+  X.restore();
+}
+
+function star8(x, y, r, spin, t) {
+  X.save(); X.translate(x, y);
+  const sx = 0.2 + 0.8 * Math.abs(Math.cos(spin));
+  X.scale(sx, 1);
+  const face = Math.cos(spin) > 0;
+  const pts = [];
+  for (let k = 0; k < 16; k++) { const rr = k % 2 ? r * 0.45 : r; const a = (k / 16) * TAU - Math.PI / 2; pts.push(Math.cos(a) * rr, Math.sin(a) * rr); }
+  poly(pts, face ? "#ffd04a" : "#e8483c");
+  ell(0, 0, r * 0.3, r * 0.3, face ? "#c8323c" : "#ffe08a");
+  X.restore();
+}
+
+// ---------- particles, notes, birds, footprints ----------
+let time = 0;
+let puffs = [], smoke = [], notes = [], steps = [], birds = [];
+let nextBirdAt = 7;
+const puff = (x, y, n, spread, up = 2) => { for (let k = 0; k < n; k++) puffs.push({ x: x + (Math.random() - 0.5) * 2, y, vx: (Math.random() - 0.5) * spread, vy: -Math.random() * up, r: 0.5 + Math.random() * 0.7, life: 1 }); };
+const note = (x, y, ch, rgb) => notes.push({ x, y, vx: (Math.random() - 0.5) * 2.2, vy: -3.5 - Math.random() * 1.5, ch, rgb, life: 1 });
+const footprint = (x, y) => steps.push({ x, y, life: 1 });
+
+function walkerStep(o, speed, dt) {
+  const before = Math.floor(o.ph / Math.PI);
+  o.ph += speed * 1.45 * dt;
+  if (speed > 0.2 && Math.floor(o.ph / Math.PI) !== before) footprint(o.x, o.y);
+}
+
+// ---------- the director and the scenes ----------
+const cap = { text: "", t0: -99, dur: 0 };
+const setCap = (text, dur) => { cap.text = text; cap.t0 = time; cap.dur = dur; };
+let hint = { until: 22 };
+let current = null;
+let waitUntil = 5;
+const ORDER = ["koliada", "sleigh", "woman", "kids"];
+let orderIdx = Math.max(0, ORDER.indexOf(QS.get("event")));
+
+function routeInfo(pts) {
+  const cum = [0];
+  for (let k = 1; k < pts.length; k++) cum.push(cum[k - 1] + Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]));
+  return { pts, cum, total: cum[cum.length - 1] };
+}
+function onRoute(r, d) {
+  d = clamp(d, 0, r.total);
+  let k = 1;
+  while (k < r.pts.length - 1 && r.cum[k] < d) k++;
+  const a = r.pts[k - 1], b = r.pts[k], t = (d - r.cum[k - 1]) / ((r.cum[k] - r.cum[k - 1]) || 1);
+  return { x: lerp(a[0], b[0], t), y: lerp(a[1], b[1], t), dx: b[0] - a[0] };
+}
+
+const LYRICS = ["Щедрик, щедрик, щедрівочка,", "прилетіла ластівочка,", "стала собі щебетати,", "господаря викликати:", "вийди, вийди, господарю,", "подивися на кошару."];
+
+function sceneKoliada() {
+  const B = HOUSES.B, dr = B.door, Wd = L.Wd;
+  const route = routeInfo([[-18, 90], [B.cx - 12, 89.5], [dr.x - 4.2, 84.2], [dr.x + 7, 85.5], [Wd + 18, 89]]);
+  const stopD = route.cum[2];
+  const crew = [
+    { coat: "#c9a878", trim: "#f0e8d6", hat: "fur", star: true },
+    { coat: "#3f6fb4", trim: "#f0e8d6", hat: "wreath", skirt: true, belt: "#e8c24a" },
+    { coat: "#d9cdb2", trim: "#8a6a44", hat: "goat" },
+    { coat: "#6e4a32", trim: "#3a2a20", hat: "cap", bag: true },
+    { coat: "#8a3a52", trim: "#f0e8d6", hat: "kerch", skirt: true },
+  ].map((c, k) => Object.assign({ ph: k * 1.3, dir: 1, x: 0, y: 0, s: 1, walk: 1 }, c));
+  const st = { D: 0, state: "in", t: 0, huddle: 0, bun: null, hosted: false, lyric: -1, noteAt: 0 };
+  setCap("Святвечір. Колядники йдуть до хати", 6);
+  const hands = (o) => ({ x: o.x + o.dir * o.s * 1.9, y: o.y - 8.2 * o.s });
+  return {
+    update(dt) {
+      st.t += dt;
+      const speed = 6.4;
+      let moving = 0;
+      if (st.state === "in") { st.D += speed * dt; moving = 1; if (st.D >= stopD) { st.D = stopD; st.state = "sing"; st.t = 0; } }
+      else if (st.state === "sing") {
+        if (st.t > 12.8) { st.state = "out"; st.t = 0; }
+      } else { st.D += speed * dt; moving = 1; }
+      st.huddle = clamp(st.huddle + (st.state === "sing" ? dt : -dt), 0, 1);
+      const sp = lerp(3.5, 1.9, smooth(st.huddle));
+      crew.forEach((o, k) => {
+        const p = onRoute(route, st.D - k * sp);
+        const lag = k * sp > st.D;
+        const sw = moving && !lag ? 1 : 0;
+        o.x = p.x; o.y = p.y; o.s = depthScale(o.y) * (o.hat === "kerch" ? 0.88 : 1);
+        o.dir = st.state === "sing" ? 1 : p.dx >= 0 ? 1 : -1;
+        o.walk += (sw - o.walk) * Math.min(1, dt * 6);
+        walkerStep(o, sw ? speed : 0, dt);
+      });
+      if (st.state === "sing") {
+        if (st.t > 0.6 && st.t < 11.5) {
+          const li = Math.floor((st.t - 0.6) / 1.9);
+          if (li !== st.lyric && li < LYRICS.length) { st.lyric = li; setCap(LYRICS[li], 1.9); }
+          if (time > st.noteAt) { st.noteAt = time + 0.4; const o = crew[(Math.random() * crew.length) | 0]; note(o.x, o.y - 15 * o.s, Math.random() < 0.5 ? 0x266a : 0x266b, "255,214,120"); }
+        }
+        dr.open = clamp((st.t - 0.8) / 1.4, 0, 1) * (st.t > 11.6 ? clamp(1 - (st.t - 11.6) / 1.1, 0, 1) : 1);
+        if (st.t > 9.6 && !st.bun) { const a = hands({ x: dr.x, y: dr.x, dir: 1, s: 0.8 }); st.bun = { t: 0, x0: dr.x, y0: B.base - 4.4, x1: crew[0].x + 1.4, y1: crew[0].y - 7 }; }
+      } else if (st.state === "out") dr.open = 0;
+      if (st.bun) st.bun.t += dt * 1.4;
+      if (st.state === "out" && st.D - (crew.length - 1) * sp > route.total + 4) { dr.open = 0; return true; }
+      return false;
+    },
+    draw() {
+      const star = crew[0], h = hands(star);
+      const sorted = crew.slice().sort((a, b) => a.y - b.y);
+      this.hostDraw();
+      for (const o of sorted) {
+        person(Object.assign({}, o, { arms: o.star ? "carry" : undefined }));
+        if (o.bag) { ell(o.x - o.dir * o.s * 2.3, o.y - 8.6 * o.s, 1.9 * o.s, 2.4 * o.s, "#8a6a44"); ln(o.x - o.dir * o.s * 0.4, o.y - 10.4 * o.s, o.x - o.dir * o.s * 2.2, o.y - 10.2 * o.s, 0.5 * o.s, "#5a4430"); }
+      }
+      ln(h.x, h.y, h.x, h.y - 10.5 * star.s, 0.5 * star.s, "#5a4430");
+      const sy = h.y - 12.8 * star.s;
+      glow(h.x, sy, 20, "255,196,90", 0.3 + 0.06 * Math.sin(time * 5));
+      star8(h.x, sy, 3.6 * star.s, time * 1.7, time);
+      for (let k = 0; k < 3; k++) ln(h.x, h.y - 10.6 * star.s, h.x + (k - 1) * 1.1 * star.s, h.y - 8.4 * star.s, 0.3 * star.s, ["#c8323c", "#2d5aa4", "#f0c24a"][k]);
+      if (st.bun) {
+        const b = st.bun, t = clamp(b.t, 0, 1);
+        if (t < 1) ell(lerp(b.x0, b.x1, t), lerp(b.y0, b.y1, t) - Math.sin(t * Math.PI) * 4, 0.8, 0.7, "#d8a860");
+      }
+    },
+    hostDraw() {
+      const o = dr.open;
+      if (o <= 0.01) return;
+      const wd = dr.w * o;
+      rect(dr.x - dr.w / 2, B.base - dr.h, dr.w, dr.h, "#ffc860");
+      if (o > 0.4) person({ x: dr.x, y: B.base - 0.3, s: 0.78, dir: 1, ph: 0, walk: 0, coat: "#7a2c3c", trim: "#f0e8d6", hat: "kerch", skirt: true, arms: o > 0.9 && st.state === "sing" ? "up" : undefined });
+      rect(dr.x + dr.w / 2 - wd, B.base - dr.h, wd * 0.45, dr.h, "#59402c");
+      X.save(); X.globalCompositeOperation = "lighter";
+      const g = X.createLinearGradient(dr.x, B.base, dr.x - 4, B.base + 11);
+      g.addColorStop(0, `rgba(255,190,90,${0.42 * o})`); g.addColorStop(1, "rgba(255,190,90,0)");
+      X.fillStyle = g; poly([dr.x - dr.w / 2, B.base, dr.x + dr.w / 2, B.base, dr.x + dr.w / 2 + 3, B.base + 12, dr.x - dr.w / 2 - 7, B.base + 12], g);
+      X.restore();
+    },
+  };
+  function st_() { return st; }
+}
+
+function sceneSleigh() {
+  const Wd = L.Wd, st = { x: Wd + 14, ph: 0, sp: 11.5, last: 0 };
+  setCap("Сани з бубонцями на вечірній дорозі", 6);
+  return {
+    update(dt) {
+      st.x -= st.sp * dt; st.ph += dt * 12;
+      if (time - st.last > 0.09) { st.last = time; puff(st.x - 10.5, 85.7, 1, 4, 2.5); puff(st.x + 21, 85.4, 1, 3, 1.8); }
+      if (Math.floor(st.ph / TAU * 2) !== Math.floor((st.ph - dt * 12) / TAU * 2)) puff(st.x - 11, 85.7, 2, 3, 1.6);
+      return st.x < -26;
+    },
+    draw() {
+      const s = 0.95, y = 85.6;
+      sleigh(st.x, y, -1, s, st.ph); horse(st.x, y, -1, s, st.ph);
+      glow(st.x + 9.6 * s, y - 8.2 * s, 6, "255,210,110", 0.3);
+    },
+  };
+}
+
+function sceneWoman() {
+  const A = HOUSES.A, Wd = L.Wd;
+  const route1 = routeInfo([[-12, 88], [WELL.x - 12, 86], [WELL.x - 4.4, 82.2]]);
+  const route2 = routeInfo([[WELL.x - 4.4, 82.2], [A.door.x + 12, 84.5], [A.door.x + 1, 76.6]]);
+  const st = { state: "in", D: 0, t: 0 };
+  const w = { x: 0, y: 0, s: 1, dir: 1, ph: 0, walk: 1, coat: "#c6a06c", trim: "#f0e8d6", hat: "kerch", skirt: true, belt: "#b32d2d" };
+  setCap("По воду. Журавель скрипить на морозі", 6);
+  return {
+    update(dt) {
+      st.t += dt;
+      const speed = 5.2;
+      let moving = 0;
+      if (st.state === "in") { st.D += speed * dt; moving = 1; if (st.D >= route1.total) { st.state = "draw"; st.t = 0; st.D = route1.total; } }
+      else if (st.state === "draw") { WELL.a = 0.62 - 0.67 * Math.sin(clamp(st.t / 2.6, 0, 1) * Math.PI) * (st.t < 2.6 ? 1 : 0); if (st.t > 2.6) WELL.a = lerp(0.62, 0.62, 1); if (st.t > 3.6) { st.state = "home"; st.t = 0; st.D = 0; WELL.a = 0.62; } }
+      else if (st.state === "home") { st.D += speed * 0.8 * dt; moving = 1; if (st.D >= route2.total) { st.state = "door"; st.t = 0; } }
+      else { A.door.open = clamp(st.t / 0.9, 0, 1) * (st.t > 2.6 ? clamp(1 - (st.t - 2.6) / 0.8, 0, 1) : 1); if (st.t > 3.5) { A.door.open = 0; return true; } }
+      const r = st.state === "in" ? route1 : route2;
+      const p = onRoute(r, st.D);
+      w.x = p.x; w.y = p.y; w.s = depthScale(w.y);
+      w.dir = st.state === "draw" ? 1 : p.dx >= 0 ? 1 : -1;
+      w.walk += (moving - w.walk) * Math.min(1, dt * 6);
+      walkerStep(w, moving ? speed : 0, dt);
+      w.yoke = st.state === "home" || st.state === "door";
+      w.arms = st.state === "draw" ? "up" : undefined;
+      w.alpha = st.state === "door" ? clamp(1 - st.t / 1.6, 0, 1) : 1;
+      return false;
+    },
+    draw() {
+      if (A.door.open > 0.01) {
+        const d = A.door; rect(d.x - d.w / 2, A.base - d.h, d.w, d.h, "#ffc860");
+      }
+      if (w.alpha > 0.02) person(w);
+    },
+  };
+}
+
+function sceneKids() {
+  const Wd = L.Wd, top = { x: 0.3 * Wd, y: 80 }, bot = { x: 0.74 * Wd, y: 95.5 };
+  const st = { state: "climb", t: 0, k: 0, ph: 0 };
+  const mkKid = (coat, hat, skirt) => ({ x: 0, y: 0, s: 0.7, dir: -1, ph: Math.random() * 3, walk: 1, coat, trim: "#f0e8d6", hat, skirt });
+  const k1 = mkKid("#c8483c", "cap"), k2 = mkKid("#3f78c0", "kerch", true);
+  setCap("Дітвора на санчатах", 6);
+  const sled = (x, y, dir, s) => {
+    X.save(); X.translate(x, y); X.scale(dir * s, s);
+    X.beginPath(); X.moveTo(-4.2, -0.5); X.lineTo(3.4, -0.5); X.quadraticCurveTo(5.2, -0.4, 4.6, -2.2); X.lineWidth = 0.55; X.strokeStyle = "#2c201c"; X.stroke();
+    ln(-3, -0.5, -3, -1.8, 0.4, "#2c201c"); ln(2.2, -0.5, 2.2, -1.8, 0.4, "#2c201c");
+    rect(-4.2, -2.4, 8.2, 0.8, "#a8483a");
+    X.restore();
+  };
+  return {
+    update(dt) {
+      st.t += dt;
+      const dur = { climb: 9, slide: 3.4, wave: 3.2, leave: 5 }[st.state];
+      const u = clamp(st.t / dur, 0, 1);
+      let x, y, dir, sw = 0;
+      if (st.state === "climb") { x = lerp(bot.x, top.x, u); y = lerp(bot.y, top.y, u); dir = -1; sw = 1; walkerStep(k1, 3.6, dt); walkerStep(k2, 3.6, dt); }
+      else if (st.state === "slide") { const e = u * u * (3 - 2 * u * 0.6); x = lerp(top.x, bot.x, e); y = lerp(top.y, bot.y, e); dir = 1; if (Math.random() < 0.6) puff(x - 3, y, 1, 4, 2); }
+      else if (st.state === "wave") { x = bot.x; y = bot.y; dir = 1; if (Math.random() < dt * 5) note(x + (Math.random() - 0.5) * 6, y - 11, 33, "255,240,200"); }
+      else { x = bot.x + u * (L.Wd + 20 - bot.x); y = bot.y; dir = 1; sw = 1; walkerStep(k1, 3.8, dt); walkerStep(k2, 3.8, dt); }
+      st.x = x; st.y = y; st.dir = dir; st.sw = sw;
+      if (u >= 1) {
+        const next = { climb: "slide", slide: "wave", wave: "leave" }[st.state];
+        if (!next) return true;
+        st.state = next; st.t = 0;
+        if (next === "slide") setCap("Вниз зі схилу, аж дух захоплює", 3);
+        if (next === "wave") setCap("Ще раз!", 3);
+      }
+      return false;
+    },
+    draw() {
+      const { x, y, dir } = st, s = depthScale(y);
+      if (st.state === "slide" || st.state === "wave") {
+        sled(x, y, dir, s);
+        const lie = st.state === "wave";
+        person(Object.assign({}, k1, { x: x - dir * 1.6 * s, y: y - 1.6 * s, dir, s: 0.7 * s, sit: true, walk: 0, arms: "up", rot: lie ? 0 : 0 }));
+        person(Object.assign({}, k2, { x: x + dir * 1.0 * s, y: y - 1.6 * s, dir, s: 0.62 * s, sit: true, walk: 0, arms: "up" }));
+      } else {
+        const back = st.state === "climb" ? -1 : 1;
+        sled(x + back * dir * 0 + (st.state === "climb" ? 6 : -5), y + 0.6, dir, s);
+        const rope = st.state === "climb" ? 6 : -5;
+        person(Object.assign({}, k1, { x: x, y, dir, s: 0.7 * s, walk: st.sw }));
+        person(Object.assign({}, k2, { x: x + dir * -2.6 * s, y: y + 0.4, dir, s: 0.64 * s, walk: st.sw }));
+        ln(x + dir * 1.4 * s, y - 5 * s, x + rope * 1, y - 1.6 * s, 0.25, "#6a4c34");
+      }
+    },
+  };
+}
+const SCENES = { koliada: sceneKoliada, sleigh: sceneSleigh, woman: sceneWoman, kids: sceneKids };
+
+// ---------- simulation ----------
+function update(dt) {
+  time += dt;
+  for (const f of FLAKES) {
+    f.y += (3.5 + 9 * f.z) * dt;
+    f.x += (Math.sin(time * 0.55 + f.ph) * 2.6 + 1.2) * f.z * dt;
+    if (f.y > 102) { f.y = Y0 - 2; f.x = Math.random() * (L.Wd + 10) - 5; }
+    if (f.x > L.Wd + 6) f.x = -5;
+  }
+  if (current) { if (current.update(dt)) { current = null; waitUntil = time + 6 + Math.random() * 4; } }
+  else if (time > waitUntil) { current = SCENES[ORDER[orderIdx % ORDER.length]](); orderIdx++; }
+  // chimney smoke
+  for (const h of Object.values(HOUSES)) if (Math.random() < dt * 5) smoke.push({ x: h.smoke.x + (Math.random() - 0.5), y: h.smoke.y, vx: 1.6 + Math.random(), vy: -3.2 - Math.random(), r: 0.6, life: 1 });
+  for (const p of smoke) { p.x += p.vx * dt; p.y += p.vy * dt; p.r += dt * 0.55; p.life -= dt * 0.24; p.vx += dt * 0.3; }
+  smoke = smoke.filter((p) => p.life > 0);
+  for (const p of puffs) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 4 * dt; p.life -= dt * 1.5; }
+  puffs = puffs.filter((p) => p.life > 0);
+  for (const p of notes) { p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt * 0.55; }
+  notes = notes.filter((p) => p.life > 0);
+  for (const p of steps) p.life -= dt / 26;
+  steps = steps.filter((p) => p.life > 0);
+  // bullfinches visit the bare tree
+  if (time > nextBirdAt && birds.length < 3 && TIPS.length) {
+    const free = TIPS.filter((t) => !birds.some((b) => b.tip === t));
+    if (free.length) {
+      const tip = free[(Math.random() * free.length) | 0];
+      birds.push({ tip, x: L.Wd + 6, y: Y0 + 4 + Math.random() * 14, x0: L.Wd + 6, y0: Y0 + 4 + Math.random() * 14, dir: -1, ph: 0, t: 0, state: "in", flying: true, stay: 7 + Math.random() * 10 });
+    }
+    nextBirdAt = time + 4 + Math.random() * 7;
+  }
+  for (const b of birds) {
+    b.t += dt; b.ph += dt * 7;
+    if (b.state === "in") {
+      const u = clamp(b.t / 3.6, 0, 1), e = 1 - (1 - u) * (1 - u);
+      b.x = lerp(b.x0, b.tip.x, e); b.y = lerp(b.y0, b.tip.y, e) - Math.sin(u * Math.PI) * 5;
+      if (u >= 1) { b.state = "sit"; b.t = 0; b.flying = false; b.dir = -1; }
+    } else if (b.state === "sit") {
+      if (Math.sin(b.t * 2.3 + b.stay) > 0.96) b.dir = -b.dir;
+      b.y = b.tip.y - Math.abs(Math.sin(b.t * 1.1)) * (Math.sin(b.t * 0.4) > 0.8 ? 0.8 : 0);
+      if (b.t > b.stay) { b.state = "out"; b.t = 0; b.flying = true; b.dir = -1; b.x0 = b.x; b.y0 = b.y; }
+    } else {
+      const u = b.t / 3.2; b.x = b.x0 - 34 * u; b.y = b.y0 - 24 * u * u - 6 * u;
+    }
+  }
+  birds = birds.filter((b) => !(b.state === "out" && b.t > 3.2));
+  if (clr) { for (let i = 0; i < clr.length; i++) if (clr[i] > 0) clr[i] = Math.max(0, clr[i] - dt * 0.022); }
+}
+
+// ---------- drawing the scene into the raster ----------
+function blit(c) { S.save(); S.setTransform(1, 0, 0, 1, 0, 0); S.drawImage(c, 0, 0); S.restore(); }
+
+function drawScene() {
+  X = S; S.setTransform(1, 0, 0, 1, 0, 0); S.fillStyle = "#000"; S.fillRect(0, 0, L.SW, L.SH); setW(S);
+  blit(skyC);
+  for (const s of STARS) {
+    const tw = 0.55 + 0.45 * Math.sin(time * (1.2 + s.s) + s.ph);
+    S.fillStyle = `rgba(225,235,255,${(0.25 + 0.7 * tw * s.s).toFixed(3)})`; S.fillRect(s.x, s.y, 0.9 * s.s + 0.4, 0.9 * s.s + 0.4);
+  }
+  // the first star of Christmas Eve
+  const sx = 0.6 * L.Wd, sy = 35, tw = 0.8 + 0.2 * Math.sin(time * 1.7);
+  glow(sx, sy, 9, "200,220,255", 0.3 * tw);
+  const ray = 3.2 + 1.6 * tw;
+  ln(sx - ray, sy, sx + ray, sy, 0.35, "rgba(240,246,255,0.95)"); ln(sx, sy - ray, sx, sy + ray, 0.35, "rgba(240,246,255,0.95)");
+  ell(sx, sy, 0.8, 0.8, "#fff");
+  blit(backC);
+  // footprints
+  for (const p of steps) ell(p.x, p.y + 0.2, 0.5, 0.28, `rgba(110,128,176,${(0.55 * Math.min(1, p.life * 2)).toFixed(3)})`);
+  // well crane
+  const w = WELL, px = w.x + 1.6, py = w.y - 9.4;
+  const ex = px - Math.cos(w.a) * 8.2, ey = py - Math.sin(w.a) * 8.2;
+  ln(px + Math.cos(w.a) * 2.8, py + Math.sin(w.a) * 2.8, ex, ey, 0.6, "#5e4a3a");
+  ell(px + Math.cos(w.a) * 3.2, py + Math.sin(w.a) * 3.2 + 0.8, 0.9, 0.9, "#8a8a92");
+  ln(ex, ey, ex, ey + 7.2, 0.2, "#5e4a3a");
+  poly([ex - 0.9, ey + 7.2, ex + 0.9, ey + 7.2, ex + 0.7, ey + 9, ex - 0.7, ey + 9], "#7a5636");
+  // smoke
+  for (const p of smoke) ell(p.x, p.y, p.r, p.r, `rgba(200,208,226,${(0.34 * Math.min(1, p.life * 1.6)).toFixed(3)})`);
+  if (current) current.draw();
+  for (const p of puffs) ell(p.x, p.y, p.r, p.r, `rgba(232,240,252,${Math.min(1, p.life).toFixed(3)})`);
+  // window lights breathe a little
+  for (const h of Object.values(HOUSES)) for (const wr of h.winRects) glow(wr.x + wr.w / 2, wr.y + wr.h / 2, 7, "255,190,90", 0.12 + 0.05 * Math.sin(time * 3 + wr.x));
+  blit(fgC);
+  for (const b of birds) bird(b);
+  setW(S);
+}
+
+// ---------- turning the raster into characters ----------
+function render() {
+  const { cols, rows, cw, ch, dpr, SW, n } = L;
+  drawScene();
+  const id = S.getImageData(0, 0, SW, L.SH).data;
+  const fd = fillImg.data;
+  G.fill(0);
+  const fl = 0.85 + 0.15 * Math.sin(time * 13) * Math.sin(time * 7.3) + 0.05 * Math.sin(time * 31);
+  const fT = time + 14;
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const i = r * cols + c, o = i * 4, k = kind[i];
+      if (k !== 3) {
+        const a = amb[i], cg = candleG[i] * fl;
+        const m = 0.55 + 0.6 * a;
+        fd[o] = baseFill[i * 3] * m + 150 * cg * 0.55; fd[o + 1] = baseFill[i * 3 + 1] * m + 92 * cg * 0.55; fd[o + 2] = baseFill[i * 3 + 2] * m + 40 * cg * 0.55; fd[o + 3] = 255;
+        const g = baseG[i];
+        if (g) {
+          const bc = baseC[i], mm = m + cg * 0.5;
+          G[i] = g; C[i] = pack(((bc >>> 16) & 255) * mm + 40 * cg, ((bc >>> 8) & 255) * mm + 22 * cg, (bc & 255) * mm);
+        }
+        continue;
+      }
+      // glass: read the 2x3 samples that belong to this cell
+      const px = c * 2, py = r * 3;
+      let sr = 0, sg = 0, sb = 0, c0 = 0, c1 = 0, r0 = 0, r2 = 0;
+      for (let j = 0; j < 3; j++) {
+        for (let q = 0; q < 2; q++) {
+          const p = ((py + j) * SW + px + q) * 4;
+          const lum = (0.3 * id[p] + 0.59 * id[p + 1] + 0.11 * id[p + 2]) / 255;
+          sr += id[p]; sg += id[p + 1]; sb += id[p + 2];
+          if (q) c1 += lum; else c0 += lum;
+          if (j === 0) r0 += lum; else if (j === 2) r2 += lum;
+        }
+      }
+      let R = sr / 6, Gg = sg / 6, B = sb / 6;
+      const cg = candleG[i] * fl * 0.45;
+      R += 130 * cg; Gg += 78 * cg; B += 30 * cg;
+      const lum = (c0 + c1) / 6;
+      const gx = (c1 - c0) / 3, gy = (r2 - r0) / 2, mag = Math.hypot(gx, gy);
+      let glyph = 0;
+      if (mag > 0.14) glyph = dirGlyph(Math.atan2(gy, gx) + Math.PI / 2);
+      else if (lum > 0.07) {
+        const d = lum <= 0.45 ? lum / 0.45 : (1 - lum) / 0.55;
+        const jit = Math.floor(hash(c, r, SEED) * 3) - 1;
+        glyph = RAMP.charCodeAt(clamp(Math.floor(d * (RAMP.length - 1)) + jit, 0, RAMP.length - 1));
+      }
+      let fr = R, fg = Gg, fb = B;
+      let gr, gg2, gb;
+      if (lum > 0.45) { gr = fr * 0.7; gg2 = fg * 0.76; gb = fb * 0.88; } else { gr = fr * 1.55 + 22; gg2 = fg * 1.55 + 22; gb = fb * 1.5 + 26; }
+
+      // frost
+      const eff = 1 - clr[i];
+      let frostHide = 0;
+      if (eff > 0.01) {
+        const hasF = frostB[i] <= fT;
+        const mi = mist[i] * smooth(clamp((fT - mistB[i]) / 6, 0, 1));
+        if (hasF) {
+          const tw = 0.8 + 0.2 * Math.sin(time * 3 + hash(c, r, 3) * 40);
+          const t = 0.34 * eff;
+          fr = lerp(fr, 120, t); fg = lerp(fg, 160, t); fb = lerp(fb, 198, t);
+          glyph = frostG[i]; gr = 206 * tw; gg2 = 232 * tw; gb = 250 * tw;
+          frostHide = eff;
+        } else if (mi > 0.04) {
+          const t = 0.55 * mi * eff;
+          fr = lerp(fr, 128, t); fg = lerp(fg, 168, t); fb = lerp(fb, 204, t);
+          if (mi * eff > 0.5 && hash(c, r, 6) < 0.55) { glyph = hash(c, r, 7) < 0.6 ? 46 : 58; gr = 196; gg2 = 222; gb = 244; }
+          else if (glyph) { gr = lerp(gr, 196, t); gg2 = lerp(gg2, 222, t); gb = lerp(gb, 244, t); }
+          frostHide = mi * eff;
+        }
+      }
+      fd[o] = fr; fd[o + 1] = fg; fd[o + 2] = fb; fd[o + 3] = 255;
+      if (glyph) { G[i] = glyph; C[i] = pack(gr, gg2, gb); }
+    }
+  }
+
+  // snow falling outside the glass
+  for (const f of FLAKES) {
+    const c = Math.floor((L.GX0 + f.x * L.u) / 2), r = Math.floor((L.GY0 + f.y * L.u) / 3);
+    if (c < 0 || r < 0 || c >= cols || r >= rows) continue;
+    const i = r * cols + c;
+    if (kind[i] !== 3) continue;
+    const eff = 1 - clr[i];
+    if (eff > 0.01 && (frostB[i] <= fT || mist[i] * eff > 0.5)) continue;
+    const o = i * 4, lum = (fd[o] * 0.3 + fd[o + 1] * 0.59 + fd[o + 2] * 0.11) / 255;
+    G[i] = f.z > 0.82 ? 42 : f.z > 0.6 ? 43 : f.z > 0.4 ? 58 : 46;
+    const v = 0.55 + 0.45 * f.z;
+    C[i] = lum > 0.55 ? pack(120 + 30 * f.z, 144 + 30 * f.z, 190) : pack(236 * v, 242 * v, 255 * v);
+  }
+  // musical notes and laughter rise from the street
+  for (const p of notes) {
+    const c = Math.floor((L.GX0 + p.x * L.u) / 2), r = Math.floor((L.GY0 + p.y * L.u) / 3);
+    if (c < 0 || r < 0 || c >= cols || r >= rows || kind[r * cols + c] !== 3) continue;
+    const i = r * cols + c;
+    G[i] = p.ch; const a = Math.min(1, p.life * 1.8);
+    const [pr, pg, pb] = p.rgb.split(",").map(Number);
+    const o = i * 4;
+    C[i] = pack(lerp(fd[o], pr, a), lerp(fd[o + 1], pg, a), lerp(fd[o + 2], pb, a));
+  }
+
+  // candle and geranium stand in front of the glass
+  for (const f of fgCells) {
+    const o = f.i * 4, glassUnder = kind[f.i] === 3;
+    const base = glassUnder ? [fd[o], fd[o + 1], fd[o + 2]] : [fd[o], fd[o + 1], fd[o + 2]];
+    const mixF = f.f[0] > 100 && f.f[1] > 80 ? 1 : 0.62;
+    fd[o] = lerp(base[0], f.f[0], mixF); fd[o + 1] = lerp(base[1], f.f[1], mixF); fd[o + 2] = lerp(base[2], f.f[2], mixF);
+    G[f.i] = f.g; C[f.i] = f.col;
+  }
+  const fi = L.flame.r * cols + L.flame.c;
+  {
+    const o = fi * 4, fr = ["(", ")", "^", "'", "!"][Math.floor(time * 11 + Math.sin(time * 5) * 3) % 5 < 0 ? 0 : Math.floor(time * 11 + Math.sin(time * 5) * 3) % 5];
+    fd[o] = lerp(fd[o], 255, 0.5); fd[o + 1] = lerp(fd[o + 1], 170, 0.5); fd[o + 2] = lerp(fd[o + 2], 60, 0.5);
+    G[fi] = fr.charCodeAt(0); C[fi] = pack(255, 232, 140);
+  }
+  // captions
+  const capRow = Math.min(rows - 3, L.wy0 + L.wh + L.SILL + 2);
+  const putText = (text, row, rgb, a) => {
+    if (a <= 0.01 || row < 0 || row >= rows) return;
+    const c0 = Math.floor((cols - text.length) / 2);
+    for (let k = 0; k < text.length; k++) {
+      const c = c0 + k, i = row * cols + c, ch2 = text.charCodeAt(k);
+      if (c < 0 || c >= cols || ch2 === 32) continue;
+      const o = i * 4;
+      G[i] = ch2; C[i] = pack(lerp(fd[o], rgb[0], a), lerp(fd[o + 1], rgb[1], a), lerp(fd[o + 2], rgb[2], a));
+    }
+  };
+  // composite
+  fillCtx.putImageData(fillImg, 0, 0);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(fillC, 0, 0, cols * cw, rows * ch);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.drawImage(gridC, 0, 0);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.font = `600 ${Math.round(ch * 0.78)}px ${L.font}`;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  let last = "";
+  for (let i = 0; i < n; i++) {
+    const g = G[i];
+    if (!g || g === 32) continue;
+    const s = css(C[i]);
+    if (s !== last) ctx.fillStyle = last = s;
+    ctx.fillText(chr(g), (i % cols) * cw + cw / 2, ((i / cols) | 0) * ch + ch / 2 + ch * 0.06);
+  }
+  // captions use a larger font so they stay readable
+  const capY = (Math.min(rows - 3, L.wy0 + L.wh + L.SILL + 3)) * ch;
+  ctx.textBaseline = "middle";
+  if (cap.text) {
+    const t = time - cap.t0, a = Math.min(1, t / 0.6, Math.max(0, (cap.dur - t) / 0.6));
+    if (a > 0.01) { ctx.font = `700 ${clamp(Math.round(L.w / 70), 13, 22)}px ${L.font}`; ctx.fillStyle = `rgba(240,218,164,${a.toFixed(3)})`; ctx.fillText(cap.text, L.w / 2, capY); }
+  }
+  if (time < hint.until) {
+    const a = Math.min(1, (hint.until - time) / 2) * 0.75;
+    ctx.font = `600 ${clamp(Math.round(L.w / 110), 11, 15)}px ${L.font}`; ctx.fillStyle = `rgba(160,186,232,${a.toFixed(3)})`;
+    ctx.fillText("проведи мишею по склу, щоб розчистити іній", L.w / 2, capY + clamp(Math.round(L.w / 70), 13, 22) * 1.8);
+  }
+}
+
+// ---------- boot ----------
+function wipe(cx, cy, rad) {
+  const { cols, rows } = L;
+  for (let r = Math.max(0, Math.floor(cy - rad)); r <= Math.min(rows - 1, Math.ceil(cy + rad)); r++) {
+    for (let c = Math.max(0, Math.floor(cx - rad)); c <= Math.min(cols - 1, Math.ceil(cx + rad)); c++) {
+      const i = r * cols + c;
+      if (kind[i] !== 3) continue;
+      const d = Math.hypot(c - cx, (r - cy) * 1.5) / (rad * 1.5);
+      if (d < 1) clr[i] = Math.max(clr[i], 1 - d * d * 0.7);
+    }
+  }
+}
+
+function setup() {
+  layout();
+  const { w, h, dpr, cols, rows, SW, SH, cw, ch, n } = L;
+  canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+  L.font = getComputedStyle(canvas).fontFamily || "monospace";
+  sceneC = mk(SW, SH); S = sceneC.getContext("2d", { willReadFrequently: true });
+  fillC = mk(cols, rows); fillCtx = fillC.getContext("2d"); fillImg = fillCtx.createImageData(cols, rows);
+  G = new Uint16Array(n); C = new Uint32Array(n);
+  gridC = mk(canvas.width, canvas.height);
+  const g = gridC.getContext("2d");
+  g.strokeStyle = "rgba(255,255,255,0.05)"; g.lineWidth = 1; g.beginPath();
+  for (let c = 0; c <= cols; c++) { const x = Math.round(c * cw * dpr) + 0.5; g.moveTo(x, 0); g.lineTo(x, h * dpr); }
+  for (let r = 0; r <= rows; r++) { const y = Math.round(r * ch * dpr) + 0.5; g.moveTo(0, y); g.lineTo(w * dpr, y); }
+  g.stroke();
+  buildCells(); genFrost(); buildWorld(); bakeAll();
+}
+
+canvas = document.querySelector("canvas");
+ctx = canvas.getContext("2d", { alpha: false });
+setup();
+
+const STEP = 1 / 30;
+{
+  const skip = Number(QS.get("t")) || 0;
+  for (let k = 0; k < skip / STEP; k++) update(STEP);
+}
+
+function pointer(e) {
+  const cx = e.clientX / L.cw, cy = e.clientY / L.ch;
+  wipe(cx, cy, 3.6);
+  hint.until = Math.min(hint.until, time + 1.5);
+}
+canvas.addEventListener("pointermove", pointer);
+canvas.addEventListener("pointerdown", pointer);
+
+let rto = 0;
+addEventListener("resize", () => { clearTimeout(rto); rto = setTimeout(() => { setup(); render(); }, 120); });
+
+const FPS = clamp(Number(QS.get("fps")) || 30, 5, 60);
+const still = matchMedia("(prefers-reduced-motion: reduce)");
+let lastT = 0, acc = 0;
+function frame(now) {
+  requestAnimationFrame(frame);
+  if (now - lastT < 1000 / FPS - 2) return;
+  const dt = Math.min(0.1, (now - lastT) / 1000);
+  lastT = now; acc += dt;
+  let k = 0;
+  while (acc >= STEP && k < 4) { update(STEP); acc -= STEP; k++; }
+  if (k === 4) acc = 0;
+  render();
+}
+render();
+if (!still.matches) { lastT = performance.now(); requestAnimationFrame(frame); }
+</script>
+</body>
+</html>
