@@ -744,7 +744,7 @@ function flightStep(b, dt) {
     if (b === MAG) for (const m of BIRDS) if (m.mode === "sit" && (m.sp.flock !== "bullfinch" || Math.random() < 0.35)) { m.sitLeft = Math.min(m.sitLeft, Math.random() * 0.5); m.panic = true; }
   } else {
     b.mode = "away"; b.t = 0;
-    b.wait = b === MAG ? (QS.has("mag") ? 9 : span(sp.away)) : b.scared ? 12 + Math.random() * 14 : ZOO ? 2 : span(sp.away);
+    b.wait = b === MAG ? span(sp.away) : b.scared ? 12 + Math.random() * 14 : ZOO ? 2 : span(sp.away);
     b.scared = false;
   }
 }
@@ -929,7 +929,7 @@ function updateSquirrel(dt) {
         q.f = goal;
         if (q.mode === "in") { q.mode = "sit"; q.rise = 0.3; q.sitT = 5.3 + Math.random() * 4; }
         else {
-          q.mode = "away"; q.t = 0; q.wait = QS.has("sq") ? 8 : 180 + Math.random() * 150;
+          q.mode = "away"; q.t = 0; q.wait = 180 + Math.random() * 150;
           for (const b of BIRDS) if (b.mode === "away") b.wait = Math.max(b.wait, b.t + 8 + Math.random() * 10);    // the birds take their time coming back
           return;
         }
@@ -1024,7 +1024,7 @@ function updateSleigh(dt) {
       sparks.push({ x: p.x + (Math.random() - 0.5) * 2, y: p.y + 1 + Math.random() * 1.5, vx: (Math.random() - 0.5) * 1.5, vy: 0.5 + Math.random() * 1.5, life: 1, ch: [46, 46, 43, 42, 39][(Math.random() * 5) | 0] });
     }
   }
-  if (q.s > q.L1 + q.C + q.L2) { q.mode = "away"; q.t = 0; q.wait = QS.has("sleigh") ? 6 : 300 + Math.random() * 360; }
+  if (q.s > q.L1 + q.C + q.L2) { q.mode = "away"; q.t = 0; q.wait = 300 + Math.random() * 360; }
 }
 
 function buildWorld() {
