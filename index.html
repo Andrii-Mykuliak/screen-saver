@@ -318,9 +318,10 @@ function buildWorld() {
   for (let i = 5; i <= 28; i += 3) PERCHES.push({ x: STEM[i].x, y: STEM[i].y - STEM[i].w * 0.5, taken: null });
   birds = [];
   const nb = clamp(Math.round(Wd / 38), 3, 5);
-  for (let k = 0; k < 2; k++) birds.push({ kind: "tit", x: Wd + 12, y: 10 + Math.random() * 30, dir: -1, ph: Math.random() * 6, state: "wait", t: 0, wait: 6 + k * 9 + Math.random() * 6, perch: null, from: null, dur: 1, peck: 0, stay: 0, s: 2.3, flying: true });
-  for (let k = 0; k < 2; k++) birds.push({ kind: "sparrow", x: Wd + 12, y: 10 + Math.random() * 30, dir: -1, ph: Math.random() * 6, state: "wait", t: 0, wait: 3 + k * 7 + Math.random() * 6, perch: null, from: null, dur: 1, peck: 0, stay: 0, s: 2.4, flying: true });
+  for (let k = 0; k < 2; k++) birds.push({ kind: "tit", x: Wd + 12, y: 10 + Math.random() * 30, dir: -1, ph: Math.random() * 6, state: "wait", t: 0, wait: 6 + k * 9 + Math.random() * 6, perch: null, from: null, dur: 1, peck: 0, stay: 0, s: 2.7, flying: true });
+  for (let k = 0; k < 2; k++) birds.push({ kind: "sparrow", x: Wd + 12, y: 10 + Math.random() * 30, dir: -1, ph: Math.random() * 6, state: "wait", t: 0, wait: 3 + k * 7 + Math.random() * 6, perch: null, from: null, dur: 1, peck: 0, stay: 0, s: 2.8, flying: true });
   for (let k = 0; k < nb; k++) birds.push({ x: Wd + 12, y: 10 + Math.random() * 30, dir: -1, ph: Math.random() * 6, state: "wait", t: 0, wait: 0.3 + k * 1.6 + Math.random() * 2, perch: null, from: null, dur: 1, peck: 0, stay: 0, s: 3.1, flying: true });
+  if (QS.has("zoo")) birds.forEach((b, i) => { b.wait = 0.2 + i * 0.35; });
 }
 
 function bakeSky() {
@@ -398,33 +399,42 @@ function star8(x, y, r, spin) {
 
 function tit(b) {
   X.save(); X.translate(b.x, b.y); X.scale(b.dir * b.s, b.s);
-  const fl = b.flying, pk = b.peck > 0 ? Math.sin(b.peck * Math.PI) : 0, k = Math.sin(b.ph);
+  const fl = b.flying, pk = b.peck > 0 ? Math.sin(b.peck * Math.PI) : 0, k = Math.sin(b.ph), out = "#070a16";
   if (!fl) X.rotate(pk * 0.55);
-  poly([-1.4, 0.1, -3.9, 0.7 + (fl ? k * 0.5 : 0), -3.8, -0.4, -1.4, -0.5], "#3e4a62");
-  ell(0, 0, 1.9, 1.25, "#86a456");
-  ell(0.8, 0.5, 1.4, 0.95, "#f4d63e");
-  ln(0.3, 0.2, 1.7, 0.9, 0.28, "#16161c");
-  ell(1.9, -0.55, 1.0, 0.95, "#14141a");
-  ell(2.1, -0.15, 0.55, 0.42, "#f4f4f0");
-  poly([2.8, -0.75, 3.5, -0.45, 2.8, -0.25], "#222");
-  if (fl) { ln(-0.2, -0.6, -1.3, -2.4 * k - 0.4, 0.85, "#4a5c82"); ln(0.4, -0.6, 1.1, -2.2 * k - 0.4, 0.85, "#5a6c92"); }
-  else { ell(-0.5, -0.2, 1.2, 0.55, "#4a5c82"); ln(-1.2, -0.1, 0.3, -0.1, 0.22, "#eef0f6"); ln(-0.2, 1.0, -0.3, 1.7, 0.28, "#222"); ln(0.5, 1.0, 0.6, 1.7, 0.28, "#222"); }
+  const tail = [-1.3, 0.0, -4.3, 0.8 + (fl ? k * 0.5 : 0), -4.2, -0.5, -1.3, -0.6];
+  poly(tail.map((v, i) => v + (i % 2 ? 0 : (v < 0 ? -0.25 : 0.25))), out);
+  ell(0, 0, 2.3, 1.55, out); ell(2.0, -0.7, 1.45, 1.35, out);
+  poly(tail, "#44527a");
+  ell(0, 0, 2.05, 1.3, "#7fae48");
+  ell(0.9, 0.55, 1.5, 1.05, "#ffd820");
+  ln(0.4, 0.15, 2.0, 1.0, 0.4, "#101014");
+  ell(2.0, -0.7, 1.2, 1.1, "#0d0d12");
+  ell(2.25, -0.2, 0.85, 0.6, "#fafaf5");
+  ell(2.45, -0.75, 0.2, 0.2, "#fff");
+  poly([3.1, -0.9, 4.0, -0.5, 3.1, -0.25], "#222");
+  if (fl) { ln(-0.2, -0.6, -1.5, -2.7 * k - 0.4, 1.1, "#3c5ca0"); ln(0.4, -0.6, 1.2, -2.5 * k - 0.4, 1.1, "#4c6cb0"); }
+  else { ell(-0.5, -0.25, 1.35, 0.65, "#3c5ca0"); ln(-1.4, -0.15, 0.4, -0.15, 0.3, "#f4f6fc"); ln(-0.2, 1.1, -0.3, 1.9, 0.35, "#222"); ln(0.6, 1.1, 0.7, 1.9, 0.35, "#222"); }
   X.restore();
 }
 
 function sparrow(b) {
   X.save(); X.translate(b.x, b.y); X.scale(b.dir * b.s, b.s);
-  const fl = b.flying, pk = b.peck > 0 ? Math.sin(b.peck * Math.PI) : 0, k = Math.sin(b.ph);
+  const fl = b.flying, pk = b.peck > 0 ? Math.sin(b.peck * Math.PI) : 0, k = Math.sin(b.ph), out = "#0a0a10";
   if (!fl) X.rotate(pk * 0.5);
-  poly([-1.4, 0.1, -3.7, 0.8 + (fl ? k * 0.5 : 0), -3.6, -0.3, -1.4, -0.5], "#6a4f36");
-  ell(0, 0, 2.05, 1.35, "#9a7650");
-  ell(0.8, 0.55, 1.45, 0.95, "#cfc7b8");
-  ell(1.9, -0.55, 1.05, 0.98, "#bdb6a8");
-  ell(1.7, -1.1, 0.9, 0.5, "#7a4a2e");
-  ell(2.5, -0.1, 0.4, 0.38, "#1c1c20");
-  poly([2.8, -0.75, 3.5, -0.45, 2.8, -0.25], "#3a3430");
-  if (fl) { ln(-0.2, -0.6, -1.3, -2.4 * k - 0.4, 0.9, "#7a5a3c"); ln(0.4, -0.6, 1.1, -2.2 * k - 0.4, 0.9, "#8a6a48"); }
-  else { ell(-0.5, -0.2, 1.3, 0.6, "#7a5a3c"); ln(-1.3, -0.1, 0.3, -0.1, 0.22, "#e6dcc8"); ln(-0.2, 1.0, -0.3, 1.7, 0.28, "#3a3430"); ln(0.5, 1.0, 0.6, 1.7, 0.28, "#3a3430"); }
+  const tail = [-1.3, 0.0, -4.0, 0.9 + (fl ? k * 0.5 : 0), -3.9, -0.4, -1.3, -0.6];
+  poly(tail.map((v, i) => v + (i % 2 ? 0 : (v < 0 ? -0.25 : 0.25))), out);
+  ell(0, 0, 2.4, 1.6, out); ell(2.0, -0.6, 1.5, 1.4, out);
+  poly(tail, "#6b4426");
+  ell(0, 0, 2.15, 1.4, "#a8693a");
+  ell(0.9, 0.6, 1.55, 1.0, "#e4dccc");
+  ln(-1.2, -0.7, 0.8, -0.5, 0.3, "#3a2312"); ln(-1.0, -0.2, 0.9, 0.0, 0.3, "#3a2312");
+  ell(2.0, -0.6, 1.25, 1.15, "#c9c2b4");
+  ell(1.8, -1.35, 1.1, 0.6, "#8a4a22");
+  ell(2.6, 0.05, 0.62, 0.5, "#0d0d12");
+  ell(2.5, -0.45, 0.2, 0.2, "#fff");
+  poly([3.1, -0.9, 4.0, -0.5, 3.1, -0.25], "#3a3430");
+  if (fl) { ln(-0.2, -0.6, -1.5, -2.7 * k - 0.4, 1.1, "#8a5a32"); ln(0.4, -0.6, 1.2, -2.5 * k - 0.4, 1.1, "#9a6a40"); }
+  else { ell(-0.5, -0.25, 1.4, 0.7, "#8a5a32"); ln(-1.4, -0.15, 0.4, -0.15, 0.3, "#f0e6d0"); ln(-0.2, 1.1, -0.3, 1.9, 0.35, "#3a3430"); ln(0.6, 1.1, 0.7, 1.9, 0.35, "#3a3430"); }
   X.restore();
 }
 
@@ -474,7 +484,7 @@ function update(dt) {
       b.ph += dt * 16;
       const u = clamp(b.t / b.dur, 0, 1), e = 1 - Math.pow(1 - u, 2.2), p = b.perch;
       b.x = lerp(b.from.x, p.x, e); b.y = lerp(b.from.y, p.y - 1.5 * b.s, e) - Math.sin(u * Math.PI) * 6;
-      if (u >= 1) { b.state = "sit"; b.t = 0; b.flying = false; b.stay = b.kind === "tit" ? 2.5 + Math.random() * 4 : b.kind === "sparrow" ? 3 + Math.random() * 5 : 4 + Math.random() * 9; b.peck = 0; puff(p.x, p.y - 1, 7, 6, 3); }
+      if (u >= 1) { b.state = "sit"; b.t = 0; b.flying = false; b.stay = QS.has("zoo") ? 60 : b.kind === "tit" ? 2.5 + Math.random() * 4 : b.kind === "sparrow" ? 3 + Math.random() * 5 : 4 + Math.random() * 9; b.peck = 0; puff(p.x, p.y - 1, 7, 6, 3); }
     } else if (b.state === "sit") {
       b.ph += dt * 2;
       if (!b.peck && Math.random() < dt * (b.kind ? 1.2 : 0.6)) b.peck = 0.0001;
